@@ -8,3 +8,9 @@ Konfigurasi aktif pada server:
 - `/etc/systemd/system/absensi-dzuhur.service`
 
 Setelah pembaruan aplikasi, jalankan `npm run build` lalu `sudo systemctl restart absensi-dzuhur`.
+
+Firewall UFW harus mengizinkan HTTP agar IP server dapat diakses tanpa port:
+
+```bash
+sudo ufw allow 80/tcp
+```
