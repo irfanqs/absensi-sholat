@@ -58,13 +58,13 @@ export default function Home() {
 
   function confirmPrayer() {
     if (attendances.some((item) => item.studentId === user.id && item.date === todayKey)) return;
-    setAttendances([{ id: crypto.randomUUID(), studentId: user.id, studentName: user.name, className: user.className, date: todayKey, time: new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date()) }, ...attendances]);
+    setAttendances([{ id: createId(), studentId: user.id, studentName: user.name, className: user.className, date: todayKey, time: new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date()) }, ...attendances]);
   }
 
   function saveStudent(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const value = { id: editing?.id || crypto.randomUUID(), name: form.get("name"), className: form.get("className"), username: form.get("username"), password: form.get("password") };
+    const value = { id: editing?.id || createId(), name: form.get("name"), className: form.get("className"), username: form.get("username"), password: form.get("password") };
     if (students.some((item) => item.username === value.username && item.id !== value.id)) { setNotice("Username sudah digunakan."); return; }
     setStudents(editing ? students.map((item) => item.id === value.id ? value : item) : [...students, value]);
     setEditing(null);
