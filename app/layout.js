@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Sahabat Dzuhur",
+  title: "AbsensiSholat",
   description: "Absensi sholat Dzuhur sekolah",
 };
 
