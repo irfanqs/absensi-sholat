@@ -14,6 +14,8 @@ const initialStudents = [
   ["Aditya Pratama", "9D", "9D_Aditya"], ["Bayu Firmansyah", "9D", "9D_Bayu"], ["Daffa Alfarizi", "9D", "9D_Daffa"], ["Fikri Ramadhan", "9D", "9D_Fikri"], ["Hafiz Maulana", "9D", "9D_Hafiz"], ["Kevin Pratama", "9D", "9D_Kevin"], ["Muhammad Farhan", "9D", "9D_Muhammad"], ["Rangga Saputra", "9D", "9D_Rangga"], ["Satria Wibowo", "9D", "9D_Satria"], ["Zidan Alamsyah", "9D", "9D_Zidan"],
 ].map(([name, className, username], index) => ({ id: index + 1, name, className, username, password: "123" }));
 
+function createId() { return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString() + "-" + Math.random().toString(16).slice(2); }
+
 function formatDate() {
   return new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date());
 }
