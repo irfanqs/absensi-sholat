@@ -13,6 +13,7 @@ Murid cukup login lalu memindai satu QR permanen yang ditempel di area sholat. Q
 - Dashboard guru dengan ringkasan dan daftar absensi hari ini.
 - Pengelolaan murid: tambah, edit, dan hapus.
 - QR dapat diunduh sebagai PNG untuk dicetak.
+- Rekap absensi harian, mingguan, dan bulanan untuk guru.
 - Tampilan responsif untuk HP.
 
 ## Akun demo
