@@ -26,6 +26,7 @@ export default function Home() {
   const [students, setStudents] = useState(initialStudents);
   const [attendances, setAttendances] = useState([]);
   const [user, setUser] = useState(null);
+  const [ready, setReady] = useState(false);
   const [view, setView] = useState("dashboard");
   const [query, setQuery] = useState("");
   const [classFilter, setClassFilter] = useState("Semua kelas");
@@ -39,6 +40,7 @@ export default function Home() {
     if (storedAttendances) setAttendances(JSON.parse(storedAttendances));
     const storedSession = localStorage.getItem("dzuhur-session");
     if (storedSession) setUser(JSON.parse(storedSession));
+    setReady(true);
   }, []);
   useEffect(() => { localStorage.setItem("dzuhur-students", JSON.stringify(students)); }, [students]);
   useEffect(() => { localStorage.setItem("dzuhur-attendances", JSON.stringify(attendances)); }, [attendances]);
