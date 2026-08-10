@@ -74,6 +74,7 @@ export default function Home() {
     setEditing(null);
   }
 
+  if (!ready) return <main className="session-loading"><div><Logo /><p>Menyiapkan AbsensiSholat</p></div></main>;
   if (!user) return <Login notice={notice} onLogin={login} />;
   if (user.role === "student") return <StudentPage user={user} attendances={attendances} todayKey={todayKey} onConfirm={confirmPrayer} onLogout={() => { localStorage.removeItem("dzuhur-session"); setUser(null); }} />;
   return <AdminApp students={students} attendances={todayAttendance} view={view} setView={setView} query={query} setQuery={setQuery} classFilter={classFilter} setClassFilter={setClassFilter} filteredStudents={filteredStudents} editing={editing} setEditing={setEditing} onSave={saveStudent} onDelete={(id) => setStudents(students.filter((item) => item.id !== id))} onLogout={() => { localStorage.removeItem("dzuhur-session"); setUser(null); }} />;
