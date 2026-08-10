@@ -54,7 +54,7 @@ export default function Home() {
     const form = new FormData(event.currentTarget);
     const username = form.get("username").trim();
     const password = form.get("password");
-    if (username === "guru" && password === "123") { const session = { name: "Guru Admin", role: "admin" }; setUser(session); localStorage.setItem("dzuhur-session", JSON.stringify(session)); selectView("dashboard"); return; }
+    if (username === "guru" && password === "123") { const session = { name: "Guru Admin", role: "admin" }; setUser(session); localStorage.setItem("dzuhur-session", JSON.stringify(session)); setView("dashboard"); return; }
     const student = students.find((item) => item.username === username && item.password === password);
     if (student) { const session = { ...student, role: "student" }; setUser(session); localStorage.setItem("dzuhur-session", JSON.stringify(session)); setView("dzuhur"); return; }
     setNotice("Username atau password belum sesuai.");
