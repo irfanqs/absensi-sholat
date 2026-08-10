@@ -23,6 +23,9 @@
   .admin-main{padding-top:18px}
   .students-panel{margin-top:8px}
   .table-actions select{padding-right:44px}
+  .attendance-list>div{grid-template-columns:34px minmax(0,1fr) auto auto}
+  .attendance-list>div .attendance-class{display:block;color:var(--green-deep);font-size:12px;font-weight:700;white-space:nowrap}
+  .attendance-list time{font-size:12px;min-width:38px}
   .danger-button{
     display:grid!important;
     grid-template-columns:20px auto;
@@ -38,3 +41,4 @@
     margin:0;
   }
 }
+@media(max-width:680px){.attendance-list>div{grid-template-columns:32px minmax(0,1fr) auto auto;gap:7px}}
