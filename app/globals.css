@@ -69,4 +69,14 @@
 .spin-result .primary{min-width:220px}
 .spin-result .spin-actions{display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap}
 .spin-actions .text-button{font-size:16px;padding:12px 8px}
+.file-button{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;white-space:nowrap}
+.file-button input{display:none}
+.import-modal{max-width:680px}
+.import-summary{margin:0;color:var(--muted);line-height:1.55}
+.import-table{max-height:290px;overflow:auto;border:1px solid var(--line);border-radius:10px;text-align:left}
+.import-table>div{display:grid;gap:4px;padding:11px 13px;border-bottom:1px solid #edf1ee}
+.import-table>div:last-child{border-bottom:0}
+.import-table strong{font-size:14px}
+.import-table span{font-size:12px;color:var(--muted)}
+.import-modal .modal-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 @media(max-width:520px){.spin-card{margin-top:44px;padding:34px 20px;border-radius:16px}.wheel-wrap{width:min(100%,290px)}.wheel-label b{top:14%;font-size:13px}}
