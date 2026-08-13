@@ -67,5 +67,6 @@
 .spin-result.fail{background:#fdf1ef;border-color:#f2c9c3;color:var(--green-deep)}
 .spin-result.fail>svg{color:#c93b31}
 .spin-result .primary{min-width:220px}
-.spin-actions{display:flex;gap:12px;align-items:center}
+.spin-result .spin-actions{display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap}
+.spin-actions .text-button{font-size:16px;padding:12px 8px}
 @media(max-width:520px){.spin-card{margin-top:44px;padding:34px 20px;border-radius:16px}.wheel-wrap{width:min(100%,290px)}.wheel-label b{top:14%;font-size:13px}}
