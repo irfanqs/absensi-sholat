@@ -47,7 +47,7 @@
 
 /* Spin wheel */
 .spin-card{margin-top:clamp(60px,9vh,110px)}
-.spin-card h1{font-size:clamp(26px,4vw,34px);letter-spacing:-.03em;margin:0 0 10px}
+.spin-card h1{display:block;width:100%;font-size:clamp(26px,4vw,34px);letter-spacing:-.03em;margin:0 0 10px;text-align:center}
 .spin-card>.muted{display:block;width:100%;max-width:520px;margin:0 auto 8px;padding:0 12px;font-style:normal;font-weight:400;text-align:center;transform:none}
 .wheel-wrap{position:relative;width:min(100%,340px);margin:18px auto 0}
 .wheel{position:relative;width:100%;aspect-ratio:1;border-radius:50%;box-shadow:0 16px 40px rgba(18,61,42,.18)}
