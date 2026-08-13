@@ -46,14 +46,14 @@
 .mobile-nav-head{display:block}.mobile-menu-toggle{display:none}@media(max-width:800px){.app-shell aside{padding:13px 16px}.mobile-nav-head{display:flex;align-items:center;justify-content:space-between}.app-shell aside .mobile-nav-head .brand{padding:0}.mobile-menu-toggle{width:42px;height:42px;display:grid;place-items:center;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--green-deep);cursor:pointer}.app-shell aside nav{display:none!important;margin-top:12px}.app-shell aside.menu-open nav{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible;gap:6px}.app-shell aside.menu-open nav button{justify-content:flex-start;min-width:0;min-height:44px;padding:10px}.admin-main{padding-top:24px}}
 
 /* Spin wheel */
-.spin-card{margin-top:clamp(96px,16vh,180px)}
+.spin-card{margin-top:clamp(60px,9vh,110px)}
 .spin-card h1{font-size:clamp(26px,4vw,34px);letter-spacing:-.03em;margin:0 0 10px}
 .spin-card>.muted{max-width:380px;margin:0 auto 8px}
 .wheel-wrap{position:relative;width:min(100%,340px);margin:34px auto 0}
 .wheel{position:relative;width:100%;aspect-ratio:1;border-radius:50%;box-shadow:0 16px 40px rgba(18,61,42,.18)}
 .wheel-face{position:absolute;inset:0;border-radius:50%;border:6px solid #fff;box-sizing:border-box;overflow:hidden}
 .wheel-label{position:absolute;inset:0;transform-origin:center;pointer-events:none}
-.wheel-label b{position:absolute;left:50%;top:11%;display:block;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;color:#3d5a4c}
+.wheel-label b{position:absolute;left:50%;top:11%;display:block;font-size:15px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;color:#3d5a4c}
 .wheel-label .wheel-pass{color:#fff}
 .wheel-pointer{position:absolute;top:-8px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:22px solid #c93b31;z-index:6;filter:drop-shadow(0 3px 4px rgba(0,0,0,.25))}
 .wheel-hub{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:31%;aspect-ratio:1;border-radius:50%;border:5px solid #fff;background:var(--green-deep);color:#fff;font-weight:800;font-size:14px;letter-spacing:.05em;cursor:pointer;box-shadow:0 8px 20px rgba(18,61,42,.3);z-index:5}
@@ -68,4 +68,4 @@
 .spin-result.fail>svg{color:#c93b31}
 .spin-result .primary{min-width:220px}
 .spin-actions{display:flex;gap:12px;align-items:center}
-@media(max-width:520px){.spin-card{margin-top:70px;padding:34px 20px;border-radius:16px}.wheel-wrap{width:min(100%,290px)}.wheel-label b{font-size:11px}}
+@media(max-width:520px){.spin-card{margin-top:44px;padding:34px 20px;border-radius:16px}.wheel-wrap{width:min(100%,290px)}.wheel-label b{font-size:13px}}
