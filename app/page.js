@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { QRCodeCanvas } from "qrcode.react";
 import {
   BookOpen, CalendarBlank, CheckCircle, ClipboardText, DownloadSimple, Gear, House, List, PencilSimple, X,
@@ -28,6 +29,7 @@ function jakartaMinutesNow() {
 function Logo() { return <div className="brand"><span className="brand-mark"><BookOpen size={22} weight="bold" /></span><span>Absensi<span>Sholat</span></span></div>; }
 
 export default function Home() {
+  const router = useRouter();
   const [students, setStudents] = useState(initialStudents);
   const [attendances, setAttendances] = useState([]);
   const [user, setUser] = useState(null);
@@ -37,6 +39,10 @@ export default function Home() {
   const [classFilter, setClassFilter] = useState("Semua kelas");
   const [editing, setEditing] = useState(null);
   const [notice, setNotice] = useState("");
+  const [spinPassed, setSpinPassed] = useState(false);
+
+  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
+  const spinKey = "dzuhur-spin-" + todayKey;
 
   useEffect(() => {
     const storedStudents = localStorage.getItem("dzuhur-students");
@@ -45,12 +51,12 @@ export default function Home() {
     if (storedAttendances) setAttendances(JSON.parse(storedAttendances));
     const storedSession = localStorage.getItem("dzuhur-session");
     if (storedSession) setUser(JSON.parse(storedSession));
+    setSpinPassed(localStorage.getItem(spinKey) === "sholat");
     setReady(true);
   }, []);
   useEffect(() => { localStorage.setItem("dzuhur-students", JSON.stringify(students)); }, [students]);
   useEffect(() => { localStorage.setItem("dzuhur-attendances", JSON.stringify(attendances)); }, [attendances]);
 
-  const todayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date());
   const todayAttendance = attendances.filter((item) => item.date === todayKey);
   const filteredStudents = useMemo(() => students.filter((student) => (classFilter === "Semua kelas" || student.className === classFilter) && `${student.name} ${student.username}`.toLowerCase().includes(query.toLowerCase())), [students, classFilter, query]);
 
@@ -61,7 +67,7 @@ export default function Home() {
     const password = form.get("password");
     if (username === "guru" && password === "123") { const session = { name: "Guru Admin", role: "admin" }; setUser(session); localStorage.setItem("dzuhur-session", JSON.stringify(session)); setView("dashboard"); return; }
     const student = students.find((item) => item.username === username && item.password === password);
-    if (student) { const session = { ...student, role: "student" }; setUser(session); localStorage.setItem("dzuhur-session", JSON.stringify(session)); setView("dzuhur"); return; }
+    if (student) { const session = { ...student, role: "student" }; setUser(session); localStorage.setItem("dzuhur-session", JSON.stringify(session)); return; }
     setNotice("Username atau password belum sesuai.");
   }
 
@@ -81,11 +87,42 @@ export default function Home() {
 
   if (!ready) return <main className="session-loading"><div><Logo /><p>Menyiapkan AbsensiSholat</p></div></main>;
   if (!user) return <Login notice={notice} onLogin={login} />;
-  if (user.role === "student") return <StudentPage user={user} attendances={attendances} todayKey={todayKey} onConfirm={confirmPrayer} onLogout={() => { localStorage.removeItem("dzuhur-session"); setUser(null); }} />;
+  if (user.role === "student") {
+    if (!spinPassed) return <SpinWheel user={user} onPass={() => { localStorage.setItem(spinKey, "sholat"); setSpinPassed(true); router.push("/dzuhur"); }} onLogout={() => { localStorage.removeItem("dzuhur-session"); setUser(null); }} />;
+    return <StudentPage user={user} attendances={attendances} todayKey={todayKey} onConfirm={confirmPrayer} onLogout={() => { localStorage.removeItem("dzuhur-session"); setUser(null); }} />;
+  }
   return <AdminApp students={students} attendances={todayAttendance} history={attendances} view={view} setView={setView} query={query} setQuery={setQuery} classFilter={classFilter} setClassFilter={setClassFilter} filteredStudents={filteredStudents} editing={editing} setEditing={setEditing} onSave={saveStudent} onDelete={(id) => setStudents(students.filter((item) => item.id !== id))} onLogout={() => { localStorage.removeItem("dzuhur-session"); setUser(null); }} />;
 }
 
 function Login({ notice, onLogin }) { return <main className="login-shell"><section className="login-story"><Logo /><div><p className="eyebrow">ABSENSI SHOLAT DZUHUR</p><h1>Hadirkan kebiasaan baik, catat dengan sederhana.</h1><p>Konfirmasi kehadiran setelah sholat Dzuhur dalam satu halaman yang mudah dipakai.</p></div><div className="story-note"><CheckCircle size={22} weight="fill" /> Satu QR tetap untuk semua murid</div></section><section className="login-panel"><form onSubmit={onLogin} className="login-form"><div className="mobile-login-brand"><Logo /></div><h2>Selamat datang</h2><p className="muted">Gunakan akun guru atau akun murid yang terdaftar.</p>{notice && <p className="form-error"><WarningCircle size={18} />{notice}</p>}<label>Username<input name="username" autoComplete="username" placeholder="Contoh: 9A_Irfan" required /></label><label>Password<input name="password" type="password" autoComplete="current-password" placeholder="Masukkan password" required /></label><button className="primary" type="submit">Masuk ke aplikasi</button><p className="login-help">Demo guru: <strong>guru</strong> dengan password <strong>123</strong></p></form></section></main>; }
+
+const wheelSegments = ["Sholat", "Tidak", "Tidak", "Tidak", "Tidak", "Tidak"];
+const wheelColors = ["#176b45", "#f7f2e7", "#e4eee7", "#f7f2e7", "#e4eee7", "#f7f2e7"];
+const wheelGradient = `conic-gradient(from 0deg, ${wheelColors.map((color, i) => `${color} ${i * 60}deg ${i * 60 + 58}deg, #ffffff ${i * 60 + 58}deg ${(i + 1) * 60}deg`).join(", ")})`;
+
+function SpinWheel({ user, onPass, onLogout }) {
+  const [rotation, setRotation] = useState(() => Math.floor(Math.random() * 360));
+  const [spinning, setSpinning] = useState(false);
+  const [result, setResult] = useState(null);
+  const pendingRef = useRef(0);
+
+  function spin() {
+    if (spinning) return;
+    const index = Math.floor(Math.random() * wheelSegments.length);
+    const turns = 5 + Math.floor(Math.random() * 3);
+    pendingRef.current = index;
+    setResult(null);
+    setSpinning(true);
+    setRotation(rotation + turns * 360 + (330 - index * 60) - (rotation % 360));
+  }
+
+  function handleTransitionEnd(event) {
+    if (event.propertyName !== "transform" || !spinning) return;
+    setSpinning(false);
+    setResult(wheelSegments[pendingRef.current] === "Sholat" ? "sholat" : "tidak");
+  }
+
+  return <main className="student-shell"><header><Logo /><button className="text-button" onClick={onLogout}>Keluar <SignOut size={18} /></button></header><section className="confirm-card spin-card"><p className="eyebrow">PUTAR RODA DZUHUR</p><h1>Putar roda, {user.name.split(" ")[0]}.</h1><p className="muted">Hasil roda menentukan kamu bisa lanjut ke halaman Dzuhur atau tidak.</p><div className="wheel-wrap"><div className="wheel-pointer" /><div className="wheel" style={{ transform: `rotate(${rotation}deg)`, transition: spinning ? "transform 4s cubic-bezier(.15,.75,.15,1)" : "none" }} onTransitionEnd={handleTransitionEnd}><div className="wheel-face" style={{ background: wheelGradient }} />{wheelSegments.map((segment, i) => { const angle = i * 60 + 30; return <div key={i} className="wheel-label" style={{ transform: `rotate(${angle}deg)` }}><b className={segment === "Sholat" ? "wheel-pass" : ""} style={{ transform: `translateX(-50%) rotate(${-angle}deg)` }}>{segment}</b></div>; })}</div><button className="wheel-hub" onClick={spin} disabled={spinning}>{spinning ? "Memutar…" : "Putar"}</button></div>{result === "sholat" ? <div className="spin-result pass"><CheckCircle size={30} weight="fill" /><div><strong>Sholat Dzuhur!</strong><span>Kamu bisa melanjutkan konfirmasi kehadiran.</span></div><button className="primary" onClick={onPass}>Lanjut ke halaman Dzuhur</button></div> : result === "tidak" ? <div className="spin-result fail"><WarningCircle size={30} weight="fill" /><div><strong>Belum sholat.</strong><span>Kamu belum bisa masuk halaman Dzuhur hari ini.</span></div><div className="spin-actions"><button className="secondary" onClick={spin}>Putar lagi</button><button className="text-button" onClick={onLogout}>Keluar</button></div></div> : null}<p className="privacy-note">Roda hanya dapat diputar sampai mendapat hasil Sholat.</p></section></main>; }
 
 function StudentPage({ user, attendances, todayKey, onConfirm, onLogout }) { const [timeNotice, setTimeNotice] = useState(null); const recorded = attendances.find((item) => item.studentId === user.id && item.date === todayKey); function handleConfirmation() { const minutes = jakartaMinutesNow(); if (minutes < 690) { setTimeNotice({ title: "Konfirmasi belum dibuka", message: "Konfirmasi sholat Dzuhur tersedia mulai pukul 11.30 WIB." }); return; } if (minutes > 900) { setTimeNotice({ title: "Waktu konfirmasi sudah terlewat", message: "Harap konfirmasi ke guru bila terjadi kesalahan." }); return; } onConfirm(); } return <main className="student-shell"><header><Logo /><button className="text-button" onClick={onLogout}>Keluar <SignOut size={18} /></button></header><section className="confirm-card"><div className="prayer-icon"><CheckCircle size={34} weight="bold" /></div>{recorded ? <><p className="eyebrow">SUDAH TERCATAT</p><h1>Terima kasih, {user.name.split(" ")[0]}.</h1><p>Absensi sholat Dzuhur Anda tercatat pukul <strong>{recorded.time}</strong>.</p></> : <><p className="eyebrow">KONFIRMASI DZUHUR</p><h1>Apakah Anda sudah sholat Dzuhur?</h1><p>{user.name} · Kelas {user.className}</p><button className="primary large" onClick={handleConfirmation}>Saya sudah sholat Dzuhur</button></>}<p className="privacy-note">Konfirmasi hanya dapat dilakukan satu kali setiap hari.</p></section>{timeNotice && <div className="modal-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="time-notice-title"><section className="student-modal time-notice"><WarningCircle size={32} weight="fill" /><div><p className="eyebrow">KONFIRMASI DZUHUR</p><h2 id="time-notice-title">{timeNotice.title}</h2></div><p>{timeNotice.message}</p><button className="primary" onClick={() => setTimeNotice(null)}>Mengerti</button></section></div>}</main>; }
 
