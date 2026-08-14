@@ -1146,13 +1146,15 @@ function Dashboard({ present, absent, total, attendances }) {
             {attendances.map((item) => (
               <div key={item.id}>
                 <span className="person-initial">{item.studentName[0]}</span>
-                <strong>{item.studentName}</strong>
-                <span className="attendance-class">
-                  Kelas {item.className} ·{" "}
-                  <b className={item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
-                    {item.status || "Hadir"}
-                  </b>
-                </span>
+                <div className="attendance-person">
+                  <strong>{item.studentName}</strong>
+                  <span className="attendance-class">
+                    Kelas {item.className} ·{" "}
+                    <b className={item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
+                      {item.status || "Hadir"}
+                    </b>
+                  </span>
+                </div>
                 <time>{item.time}</time>
               </div>
             ))}
