@@ -1107,6 +1107,8 @@ function NavButton({ active, onClick, icon, children }) {
   );
 }
 function Dashboard({ present, absent, total, attendances }) {
+  const hadirCount = attendances.filter((item) => item.status !== "Haid").length;
+  const haidCount = attendances.filter((item) => item.status === "Haid").length;
   return (
     <>
       <section className="metric-grid">
@@ -1135,7 +1137,9 @@ function Dashboard({ present, absent, total, attendances }) {
             <h2>Absensi terbaru</h2>
             <p>Konfirmasi yang masuk hari ini.</p>
           </div>
-          <span>{present} murid hadir</span>
+          <span>
+            {hadirCount} murid hadir{haidCount ? ` · ${haidCount} haid` : ""}
+          </span>
         </div>
         {attendances.length ? (
           <div className="attendance-list">
@@ -1143,8 +1147,11 @@ function Dashboard({ present, absent, total, attendances }) {
               <div key={item.id}>
                 <span className="person-initial">{item.studentName[0]}</span>
                 <strong>{item.studentName}</strong>
-                <span className={item.status === "Haid" ? "attendance-class period" : "attendance-class"}>
-                  Kelas {item.className} · {item.status || "Hadir"}
+                <span className="attendance-class">
+                  Kelas {item.className} ·{" "}
+                  <b className={item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
+                    {item.status || "Hadir"}
+                  </b>
                 </span>
                 <time>{item.time}</time>
               </div>
