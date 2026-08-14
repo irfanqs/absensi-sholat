@@ -870,6 +870,7 @@ function AdminApp(props) {
   };
   const present = attendances.length;
   const absent = students.length - present;
+  const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
   return (
     <div className="app-shell">
       <aside className={mobileMenuOpen ? "menu-open" : ""}>
@@ -952,6 +953,7 @@ function AdminApp(props) {
         {view === "students" && (
           <Students
             students={filteredStudents}
+            classOptions={classOptions}
             query={query}
             setQuery={setQuery}
             classFilter={classFilter}
@@ -966,6 +968,7 @@ function AdminApp(props) {
       {editing !== null && (
         <StudentModal
           student={editing}
+          classOptions={classOptions}
           onClose={() => setEditing(null)}
           onSave={onSave}
         />
@@ -1042,6 +1045,7 @@ function ReportPage({ students, history }) {
   const [period, setPeriod] = useState("daily");
   const [selectedDate, setSelectedDate] = useState(today);
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
+  const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
   const records = useMemo(() => {
     const reference = new Date(selectedDate + "T12:00:00");
     const day = (reference.getDay() + 6) % 7;
@@ -1105,10 +1109,9 @@ function ReportPage({ students, history }) {
             onChange={(event) => setSelectedClass(event.target.value)}
           >
             <option>Semua kelas</option>
-            <option>9A</option>
-            <option>9B</option>
-            <option>9C</option>
-            <option>9D</option>
+            {classOptions.map((className) => (
+              <option key={className}>{className}</option>
+            ))}
           </select>
         </label>
       </div>
@@ -1168,6 +1171,7 @@ function Metric({ label, value, detail, tone }) {
 }
 function Students({
   students,
+  classOptions,
   query,
   setQuery,
   classFilter,
@@ -1227,10 +1231,9 @@ function Students({
           onChange={(e) => setClassFilter(e.target.value)}
         >
           <option>Semua kelas</option>
-          <option>9A</option>
-          <option>9B</option>
-          <option>9C</option>
-          <option>9D</option>
+          {classOptions.map((className) => (
+            <option key={className}>{className}</option>
+          ))}
         </select>
         <label className="file-button secondary">
           <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFile} />
@@ -1241,7 +1244,7 @@ function Students({
           onClick={() =>
             setEditing({
               name: "",
-              className: "9A",
+              className: classOptions[0] || "",
               username: "",
               password: "123",
             })
@@ -1410,7 +1413,7 @@ function SettingsPage({ onLogout }) {
     </section>
   );
 }
-function StudentModal({ student, onClose, onSave }) {
+function StudentModal({ student, classOptions, onClose, onSave }) {
   return (
     <div className="modal-backdrop">
       <form className="student-modal" onSubmit={onSave}>
@@ -1433,10 +1436,9 @@ function StudentModal({ student, onClose, onSave }) {
         <label>
           Kelas
           <select name="className" defaultValue={student.className}>
-            <option>9A</option>
-            <option>9B</option>
-            <option>9C</option>
-            <option>9D</option>
+            {classOptions.map((className) => (
+              <option key={className}>{className}</option>
+            ))}
           </select>
         </label>
         <label>
