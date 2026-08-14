@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { QRCodeCanvas } from "qrcode.react";
 import * as XLSX from "xlsx";
+import { supabase } from "../lib/supabase";
 import {
   BookOpen, CalendarBlank, CheckCircle, ClipboardText, DownloadSimple, Gear, House, List, PencilSimple, X,
   Plus, QrCode, SignOut, Trash, UsersThree, WarningCircle,
@@ -73,17 +74,32 @@ export default function Home() {
   const spinKey = "dzuhur-spin-" + todayKey;
 
   useEffect(() => {
-    const storedStudents = localStorage.getItem("dzuhur-students");
-    const storedAttendances = localStorage.getItem("dzuhur-attendances");
-    if (storedStudents) setStudents(JSON.parse(storedStudents));
-    if (storedAttendances) setAttendances(JSON.parse(storedAttendances));
-    const storedSession = localStorage.getItem("dzuhur-session");
-    if (storedSession) setUser(JSON.parse(storedSession));
-    setSpinPassed(localStorage.getItem(spinKey) === "sholat");
-    setReady(true);
+    let active = true;
+    async function loadData() {
+      if (supabase) {
+        const [{ data: remoteStudents, error: studentsError }, { data: remoteAttendances, error: attendancesError }] = await Promise.all([
+          supabase.from("students").select("*").order("created_at"),
+          supabase.from("attendances").select("*").order("created_at", { ascending: false }),
+        ]);
+        if (studentsError || attendancesError) setNotice("Database belum siap. Jalankan schema Supabase terlebih dahulu.");
+        if (remoteStudents?.length) { const remote = remoteStudents.map((item) => ({ id: item.id, nis: item.nis || "", name: item.name, className: item.class_name, gender: item.gender || "", username: item.username, password: item.password })); const localStudents = JSON.parse(localStorage.getItem("dzuhur-students") || "[]"); const usernames = new Set(remote.map((item) => item.username)); setStudents([...remote, ...localStudents.filter((item) => !usernames.has(item.username))]); } else { const localStudents = JSON.parse(localStorage.getItem("dzuhur-students") || "[]"); if (localStudents.length) setStudents(localStudents); }
+        if (remoteAttendances) setAttendances(remoteAttendances.map((item) => ({ id: item.id, studentId: item.student_id, studentName: item.student_name, className: item.class_name, date: item.date, time: item.time, status: item.status })));
+      } else {
+        const storedStudents = localStorage.getItem("dzuhur-students");
+        const storedAttendances = localStorage.getItem("dzuhur-attendances");
+        if (storedStudents) setStudents(JSON.parse(storedStudents));
+        if (storedAttendances) setAttendances(JSON.parse(storedAttendances));
+      }
+      const storedSession = localStorage.getItem("dzuhur-session");
+      if (storedSession) setUser(JSON.parse(storedSession));
+      setSpinPassed(localStorage.getItem(spinKey) === "sholat");
+      if (active) setReady(true);
+    }
+    loadData();
+    return () => { active = false; };
   }, []);
-  useEffect(() => { localStorage.setItem("dzuhur-students", JSON.stringify(students)); }, [students]);
-  useEffect(() => { localStorage.setItem("dzuhur-attendances", JSON.stringify(attendances)); }, [attendances]);
+  useEffect(() => { if (!ready) return; if (supabase) { supabase.from("students").upsert(students.map((item) => ({ id: String(item.id), nis: item.nis || "", name: item.name, class_name: item.className, gender: item.gender || null, username: item.username, password: item.password })), { onConflict: "id" }); } else localStorage.setItem("dzuhur-students", JSON.stringify(students)); }, [students, ready]);
+  useEffect(() => { if (!ready) return; if (supabase) { supabase.from("attendances").upsert(attendances.map((item) => ({ id: String(item.id), student_id: String(item.studentId), student_name: item.studentName, class_name: item.className, date: item.date, time: item.time, status: item.status || "Hadir" })), { onConflict: "id" }); } else localStorage.setItem("dzuhur-attendances", JSON.stringify(attendances)); }, [attendances, ready]);
 
   const todayAttendance = attendances.filter((item) => item.date === todayKey);
   const filteredStudents = useMemo(() => students.filter((student) => (classFilter === "Semua kelas" || student.className === classFilter) && `${student.name} ${student.username}`.toLowerCase().includes(query.toLowerCase())), [students, classFilter, query]);
@@ -107,10 +123,15 @@ export default function Home() {
   function saveStudent(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const value = { id: editing?.id || createId(), name: form.get("name"), className: form.get("className"), username: form.get("username"), password: form.get("password") };
+    const value = { id: editing?.id || createId(), nis: form.get("nis") || "", name: form.get("name"), className: form.get("className"), gender: form.get("gender") || "", username: form.get("username"), password: form.get("password") };
     if (students.some((item) => item.username === value.username && item.id !== value.id)) { setNotice("Username sudah digunakan."); return; }
     setStudents(editing ? students.map((item) => item.id === value.id ? value : item) : [...students, value]);
     setEditing(null);
+  }
+
+  async function deleteStudent(id) {
+    if (supabase) await supabase.from("students").delete().eq("id", String(id));
+    setStudents(students.filter((item) => item.id !== id));
   }
 
   if (!ready) return <main className="session-loading"><div><Logo /><p>Menyiapkan AbsensiSholat</p></div></main>;
@@ -164,4 +185,4 @@ function Students({ students, query, setQuery, classFilter, setClassFilter, setE
 function ImportPreview({ preview, onClose, onConfirm }) { return <div className="modal-backdrop"><section className="student-modal import-modal"><div><p className="eyebrow">KONFIRMASI IMPORT</p><h2>{preview.error ? "File belum bisa diimpor" : "Periksa data murid"}</h2><p className="muted">{preview.fileName}</p></div>{preview.error ? <p className="form-error">{preview.error}</p> : <><p className="import-summary">{preview.students.length} murid siap ditambahkan. Pastikan data sudah benar sebelum menyimpan.</p><div className="import-table">{preview.students.slice(0, 12).map((student) => <div key={student.id}><strong>{student.name}</strong><span>NIS {student.nis || "-"} · {student.gender || "Gender belum diisi"} · Kelas {student.className || "-"}</span></div>)}</div>{preview.students.length > 12 && <p className="muted">Menampilkan 12 data pertama.</p>}</>}<div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Batal</button>{!preview.error && <button type="button" className="primary" onClick={onConfirm}>Data sudah benar, simpan</button>}</div></section></div>; }
 function QrPage() { const url = typeof window === "undefined" ? "https://domain-sekolah.id/dzuhur" : new URL("/dzuhur", window.location.origin).toString(); const qrRef = useRef(null); function downloadQr() { const canvas = qrRef.current?.querySelector("canvas"); if (!canvas) return; const link = document.createElement("a"); link.download = "qr-absensi-dzuhur.png"; link.href = canvas.toDataURL("image/png"); link.click(); } return <section className="qr-panel"><div><p className="eyebrow">SATU QR PERMANEN</p><h2>Tempelkan QR ini di area sholat.</h2><p>Setelah murid login, QR membuka halaman konfirmasi sholat Dzuhur.</p><code>{url}</code><a className="primary qr-link" href={url}>Buka halaman Dzuhur</a></div><div className="qr-area"><div ref={qrRef} className="qr-print"><QRCodeCanvas value={url} size={280} bgColor="#ffffff" fgColor="#123d2a" includeMargin /></div><button className="secondary qr-download" onClick={downloadQr}><DownloadSimple size={19} />Download QR</button></div></section>; }
 function SettingsPage({ onLogout }) { return <section className="simple-panel"><ClipboardText size={28} /><h2>Pengaturan aplikasi</h2><p>QR permanen memakai alamat web yang sedang dibuka dan mengarah ke halaman Dzuhur.</p><div className="settings-signout"><div><strong>Keluar dari akun</strong><span>Anda perlu login kembali untuk mengakses dashboard.</span></div><button className="danger-button" onClick={onLogout}><SignOut size={19} />Keluar</button></div></section>; }
-function StudentModal({ student, onClose, onSave }) { return <div className="modal-backdrop"><form className="student-modal" onSubmit={onSave}><div><p className="eyebrow">{student.id ? "EDIT MURID" : "TAMBAH MURID"}</p><h2>{student.id ? "Perbarui data murid" : "Masukkan data murid baru"}</h2></div><label>Nama lengkap<input name="name" defaultValue={student.name} required /></label><label>Kelas<select name="className" defaultValue={student.className}><option>9A</option><option>9B</option><option>9C</option><option>9D</option></select></label><label>Username<input name="username" defaultValue={student.username} required /></label><label>Password<input name="password" defaultValue={student.password} required /></label><div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Batal</button><button type="submit" className="primary">Simpan data</button></div></form></div>; }
+function StudentModal({ student, onClose, onSave }) { return <div className="modal-backdrop"><form className="student-modal" onSubmit={onSave}><div><p className="eyebrow">{student.id ? "EDIT MURID" : "TAMBAH MURID"}</p><h2>{student.id ? "Perbarui data murid" : "Masukkan data murid baru"}</h2></div><label>NIS<input name="nis" defaultValue={student.nis} /></label><label>Nama lengkap<input name="name" defaultValue={student.name} required /></label><label>Kelas<select name="className" defaultValue={student.className}><option>9A</option><option>9B</option><option>9C</option><option>9D</option></select></label><label>Jenis kelamin<select name="gender" defaultValue={student.gender}><option value="">Belum diatur</option><option value="Laki-laki">Laki-laki</option><option value="Perempuan">Perempuan</option></select></label><label>Username<input name="username" defaultValue={student.username} required /></label><label>Password<input name="password" defaultValue={student.password} required /></label><div className="modal-actions"><button type="button" className="secondary" onClick={onClose}>Batal</button><button type="submit" className="primary">Simpan data</button></div></form></div>; }

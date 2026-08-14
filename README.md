@@ -15,6 +15,7 @@ Murid cukup login lalu memindai satu QR permanen yang ditempel di area sholat. Q
 - QR dapat diunduh sebagai PNG untuk dicetak.
 - Rekap absensi harian, mingguan, dan bulanan untuk guru.
 - Tampilan responsif untuk HP.
+- Import murid dari Excel/CSV dengan halaman konfirmasi sebelum disimpan.
 
 ## Akun demo
 
@@ -24,6 +25,18 @@ Murid cukup login lalu memindai satu QR permanen yang ditempel di area sholat. Q
 | Murid | `9A_Irfan` | `123` |
 
 Data contoh mencakup 40 murid dari kelas 9A sampai 9D. Lihat [data/dummy-students.csv](data/dummy-students.csv).
+
+## Supabase dan Vercel
+
+Aplikasi sudah memiliki client Supabase dan schema database di [supabase/schema.sql](supabase/schema.sql). Untuk mengaktifkan penyimpanan terpusat:
+
+1. Buat project di Supabase.
+2. Jalankan isi `supabase/schema.sql` di SQL Editor Supabase.
+3. Salin `.env.example` menjadi `.env.local` untuk lokal.
+4. Isi `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+5. Tambahkan environment variable yang sama di Vercel.
+
+Tanpa environment variable, aplikasi masih memakai `localStorage` sebagai fallback lokal. Schema saat ini memakai policy publik agar alur login demo lama tetap berjalan. Sebelum digunakan secara resmi, migrasikan login ke Supabase Auth dan ganti policy RLS agar data tidak dapat dibaca atau diubah publik.
 
 ## Prasyarat
 
@@ -97,7 +110,7 @@ sudo systemctl restart absensi-dzuhur
 
 ## Catatan penting
 
-Versi saat ini adalah MVP. Data murid, sesi login, dan absensi disimpan di `localStorage` browser untuk kebutuhan demonstrasi, sehingga belum cocok untuk pencatatan resmi lintas perangkat. Untuk penggunaan produksi sekolah, langkah berikutnya adalah menggunakan PostgreSQL, autentikasi berbasis cookie aman, password hash, dan backup database.
+Data murid dan absensi akan disimpan di Supabase jika environment variable tersedia. Sesi login dan status spin masih memakai browser karena autentikasi aplikasi saat ini masih berbasis demo. Untuk pencatatan resmi, gunakan Supabase Auth, password hash, RLS berbasis role, dan backup database.
 
 ## Struktur penting
 
