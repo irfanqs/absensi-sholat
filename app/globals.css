@@ -79,6 +79,8 @@
 .import-table strong{font-size:14px}
 .import-table span{font-size:12px;color:var(--muted)}
 .import-modal .modal-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.gender-label{display:block;margin-top:4px;color:var(--muted);font-size:11px;font-weight:600}
+.import-warning{margin:0;padding:10px 12px;border:1px solid #f0d3a5;border-radius:9px;background:#fff8e9;color:#8a5a13;font-size:13px;line-height:1.45}
 .delete-modal{max-width:460px}
 .delete-icon{width:54px;height:54px;display:grid;place-items:center;border-radius:50%;background:#fdf1ef;color:#c93b31}
 .delete-modal h2{margin:0 0 8px}

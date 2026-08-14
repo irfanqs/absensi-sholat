@@ -85,7 +85,7 @@ function normalizeImportHeader(value) {
     .replace(/[\s./_-]/g, "");
 }
 
-function parseImportedRows(rows) {
+function parseImportedRows(rows, existingStudents = []) {
   const headerIndex = rows.findIndex((row) =>
     row.some((cell) =>
       ["nama", "n a m a", "l/p", "nis"].includes(
@@ -110,6 +110,7 @@ function parseImportedRows(rows) {
   );
   const nisIndex = findColumn("nis", "nissiswa", "nomorinduk");
   const genderIndex = findColumn("l/p", "lp", "jeniskelamin", "gender");
+  const religionIndex = findColumn("agm", "agama", "religion");
   const classIndex = findColumn("kelas", "class", "rombel");
   const classText = rows
     .slice(0, headerIndex)
@@ -119,11 +120,22 @@ function parseImportedRows(rows) {
   const classMatch = classText.match(/kelas\s*:?\s*([A-Za-z0-9-]+)/i);
   const fallbackClass = classMatch?.[1] || "";
   if (nameIndex < 0) throw new Error("Kolom Nama tidak ditemukan.");
-  return rows
+  if (religionIndex < 0) throw new Error("Kolom AGM/agama tidak ditemukan.");
+  const seenNis = new Set(
+    existingStudents
+      .map((student) => String(student.nis || "").trim())
+      .filter(Boolean),
+  );
+  const duplicates = [];
+  const excludedNonIslam = [];
+  const students = rows
     .slice(headerIndex + 1)
     .map((row) => {
       const name = String(row[nameIndex] || "").trim();
       const nis = String(nisIndex >= 0 ? row[nisIndex] || "" : "").trim();
+      const religion = String(row[religionIndex] || "")
+        .trim()
+        .toUpperCase();
       const genderValue = String(genderIndex >= 0 ? row[genderIndex] || "" : "")
         .trim()
         .toUpperCase();
@@ -131,6 +143,15 @@ function parseImportedRows(rows) {
         classIndex >= 0 ? row[classIndex] || fallbackClass : fallbackClass,
       ).trim();
       if (!name || (!nis && !genderValue && !className)) return null;
+      if (religion !== "IS") {
+        excludedNonIslam.push({ name, nis, religion: religion || "kosong" });
+        return null;
+      }
+      if (nis && seenNis.has(nis)) {
+        duplicates.push({ name, nis });
+        return null;
+      }
+      if (nis) seenNis.add(nis);
       const gender =
         genderValue === "P" || genderValue.includes("PEREMPUAN")
           ? "Perempuan"
@@ -154,6 +175,7 @@ function parseImportedRows(rows) {
       };
     })
     .filter(Boolean);
+  return { students, excludedNonIslam, duplicates };
 }
 
 function formatDate() {
@@ -1192,16 +1214,24 @@ function Students({
           workbook.Sheets[workbook.SheetNames[0]],
           { header: 1, defval: "" },
         );
-        const imported = parseImportedRows(rows);
+        const imported = parseImportedRows(rows, students);
         setPreview({
           fileName: file.name,
-          students: imported,
-          error: imported.length
+          students: imported.students,
+          excludedNonIslam: imported.excludedNonIslam,
+          duplicates: imported.duplicates,
+          error: imported.students.length
             ? ""
             : "Tidak ada data murid yang bisa dibaca.",
         });
       } catch (error) {
-        setPreview({ fileName: file.name, students: [], error: error.message });
+        setPreview({
+          fileName: file.name,
+          students: [],
+          excludedNonIslam: [],
+          duplicates: [],
+          error: error.message,
+        });
       }
     };
     reader.readAsArrayBuffer(file);
@@ -1264,7 +1294,12 @@ function Students({
         </div>
         {students.map((student) => (
           <div className="table-row" key={student.id}>
-            <strong>{student.name}</strong>
+            <strong>
+              {student.name}
+              <small className="gender-label">
+                {student.gender || "Gender belum diatur"}
+              </small>
+            </strong>
             <span>
               <b className="class-chip">{student.className}</b>
             </span>
@@ -1315,8 +1350,20 @@ function ImportPreview({ preview, onClose, onConfirm }) {
           <>
             <p className="import-summary">
               {preview.students.length} murid siap ditambahkan. Pastikan data
-              sudah benar sebelum menyimpan.
+               sudah benar sebelum menyimpan.
             </p>
+            {preview.excludedNonIslam?.length > 0 && (
+              <p className="import-warning">
+                {preview.excludedNonIslam.length} murid dikecualikan karena agama
+                bukan IS atau kolom AGM kosong.
+              </p>
+            )}
+            {preview.duplicates?.length > 0 && (
+              <p className="import-warning">
+                {preview.duplicates.length} data duplikat berdasarkan NIS
+                dikecualikan.
+              </p>
+            )}
             <div className="import-table">
               {preview.students.slice(0, 12).map((student) => (
                 <div key={student.id}>
