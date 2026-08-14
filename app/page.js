@@ -1065,6 +1065,8 @@ function AdminApp(props) {
             present={present}
             absent={absent}
             total={students.length}
+            students={students}
+            classOptions={classOptions}
             attendances={attendances}
           />
         )}
@@ -1106,15 +1108,23 @@ function NavButton({ active, onClick, icon, children }) {
     </button>
   );
 }
-function Dashboard({ present, absent, total, attendances }) {
-  const hadirCount = attendances.filter((item) => item.status !== "Haid").length;
-  const haidCount = attendances.filter((item) => item.status === "Haid").length;
+function Dashboard({ students, classOptions, attendances }) {
+  const [selectedClass, setSelectedClass] = useState("Semua kelas");
+  const visibleStudents = students.filter(
+    (student) => selectedClass === "Semua kelas" || student.className === selectedClass,
+  );
+  const visibleAttendances = attendances.filter(
+    (item) => selectedClass === "Semua kelas" || item.className === selectedClass,
+  );
+  const hadirCount = visibleAttendances.filter((item) => item.status !== "Haid").length;
+  const haidCount = visibleAttendances.filter((item) => item.status === "Haid").length;
+  const absent = visibleStudents.length - visibleAttendances.length;
   return (
     <>
       <section className="metric-grid">
         <Metric
           label="Sudah hadir"
-          value={present}
+          value={hadirCount}
           detail="Murid terkonfirmasi"
           tone="green"
         />
@@ -1126,7 +1136,7 @@ function Dashboard({ present, absent, total, attendances }) {
         />
         <Metric
           label="Total murid"
-          value={total}
+          value={visibleStudents.length}
           detail="Dari 36 kelas"
           tone="plain"
         />
@@ -1137,13 +1147,17 @@ function Dashboard({ present, absent, total, attendances }) {
             <h2>Absensi terbaru</h2>
             <p>Konfirmasi yang masuk hari ini.</p>
           </div>
+          <select value={selectedClass} onChange={(event) => setSelectedClass(event.target.value)}>
+            <option>Semua kelas</option>
+            {classOptions.map((className) => <option key={className}>{className}</option>)}
+          </select>
           <span>
             {hadirCount} murid hadir{haidCount ? ` · ${haidCount} haid` : ""}
           </span>
         </div>
-        {attendances.length ? (
+        {visibleAttendances.length ? (
           <div className="attendance-list">
-            {attendances.map((item) => (
+            {visibleAttendances.map((item) => (
               <div key={item.id}>
                 <span className="person-initial">{item.studentName[0]}</span>
                 <div className="attendance-person">
@@ -1204,6 +1218,20 @@ function ReportPage({ students, history }) {
       .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   }, [history, period, selectedDate, selectedClass]);
   const uniqueStudents = new Set(records.map((item) => item.studentId)).size;
+  function exportReport() {
+    const rows = records.map((item, index) => ({
+      No: index + 1,
+      Tanggal: item.date,
+      Waktu: item.time,
+      Nama: item.studentName,
+      Kelas: item.className,
+      Status: item.status || "Hadir",
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Rekap Dzuhur");
+    XLSX.writeFile(workbook, `rekap-dzuhur-${selectedDate}.xlsx`);
+  }
   return (
     <section className="report-panel">
       <div className="report-controls">
@@ -1247,6 +1275,10 @@ function ReportPage({ students, history }) {
             ))}
           </select>
         </label>
+        <button className="secondary report-export" onClick={exportReport}>
+          <DownloadSimple size={18} />
+          Export Excel
+        </button>
       </div>
       <div className="report-summary">
         <div>
