@@ -128,9 +128,24 @@ function parseImportedRows(rows, existingStudents = []) {
   );
   const duplicates = [];
   const excludedNonIslam = [];
+  let currentClass = fallbackClass;
   const students = rows
     .slice(headerIndex + 1)
     .map((row) => {
+      const rowText = row.map((cell) => String(cell || "")).join(" ");
+      const sectionMatch = rowText.match(/kelas\s*:?[\s]*([A-Za-z0-9-]+)/i);
+      if (sectionMatch) {
+        currentClass = sectionMatch[1].trim();
+        return null;
+      }
+      if (
+        row.some((cell) =>
+          ["nama", "n a m a", "l/p", "nis", "agm"].includes(
+            String(cell || "").toLowerCase().trim(),
+          ),
+        )
+      )
+        return null;
       const name = String(row[nameIndex] || "").trim();
       const nis = String(nisIndex >= 0 ? row[nisIndex] || "" : "").trim();
       const religion = String(row[religionIndex] || "")
@@ -140,7 +155,7 @@ function parseImportedRows(rows, existingStudents = []) {
         .trim()
         .toUpperCase();
       const className = String(
-        classIndex >= 0 ? row[classIndex] || fallbackClass : fallbackClass,
+        classIndex >= 0 ? row[classIndex] || currentClass : currentClass,
       ).trim();
       if (!name || (!nis && !genderValue && !className)) return null;
       if (religion !== "IS") {
