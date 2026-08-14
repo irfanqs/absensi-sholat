@@ -1157,9 +1157,9 @@ function Dashboard({ students, classOptions, attendances }) {
         </div>
         {visibleAttendances.length ? (
           <div className="attendance-list">
-            {visibleAttendances.map((item) => (
+            {visibleAttendances.map((item, index) => (
               <div key={item.id}>
-                <span className="person-initial">{item.studentName[0]}</span>
+                <span className="person-initial attendance-number">{index + 1}</span>
                 <div className="attendance-person">
                   <strong>{item.studentName}</strong>
                   <span className="attendance-class">
