@@ -264,6 +264,7 @@ export default function Home() {
   const [classFilter, setClassFilter] = useState("Semua kelas");
   const [editing, setEditing] = useState(null);
   const [notice, setNotice] = useState("");
+  const [attendanceNotice, setAttendanceNotice] = useState("");
   const [spinPassed, setSpinPassed] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [menstruationDecision, setMenstruationDecision] = useState(null);
@@ -417,49 +418,51 @@ export default function Home() {
     setNotice("Username atau password belum sesuai.");
   }
 
-  function confirmPrayer() {
+  async function recordAttendance(status) {
     if (
       attendances.some(
         (item) => item.studentId === user.id && item.date === todayKey,
       )
     )
       return;
-    setAttendances([
-      {
-        id: createId(),
-        studentId: user.id,
-        studentName: user.name,
-        className: user.className,
-        date: todayKey,
-        time: new Intl.DateTimeFormat("id-ID", {
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZone: "Asia/Jakarta",
-        }).format(new Date()),
-        status: "Hadir",
-      },
-      ...attendances,
-    ]);
+    const record = {
+      id: createId(),
+      studentId: user.id,
+      studentName: user.name,
+      className: user.className,
+      date: todayKey,
+      time: new Intl.DateTimeFormat("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Jakarta",
+      }).format(new Date()),
+      status,
+    };
+    if (supabase) {
+      const { error } = await supabase.from("attendances").insert({
+        id: String(record.id),
+        student_id: String(record.studentId),
+        student_name: record.studentName,
+        class_name: record.className,
+        date: record.date,
+        time: record.time,
+        status: record.status,
+      });
+      if (error) {
+        setAttendanceNotice(`Gagal menyimpan absensi: ${error.message}`);
+        return;
+      }
+    }
+    setAttendanceNotice("");
+    setAttendances((current) => [record, ...current]);
+  }
+
+  function confirmPrayer() {
+    return recordAttendance("Hadir");
   }
 
   function recordMenstruation() {
-    if (attendances.some((item) => item.studentId === user.id && item.date === todayKey)) return;
-    setAttendances([
-      {
-        id: createId(),
-        studentId: user.id,
-        studentName: user.name,
-        className: user.className,
-        date: todayKey,
-        time: new Intl.DateTimeFormat("id-ID", {
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZone: "Asia/Jakarta",
-        }).format(new Date()),
-        status: "Haid",
-      },
-      ...attendances,
-    ]);
+    return recordAttendance("Haid");
   }
 
   async function saveStudent(event) {
@@ -584,6 +587,7 @@ export default function Home() {
         attendances={attendances}
         todayKey={todayKey}
         onConfirm={confirmPrayer}
+        attendanceNotice={attendanceNotice}
         onLogout={() => {
           localStorage.removeItem("dzuhur-session");
           setUser(null);
@@ -854,7 +858,7 @@ function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
   );
 }
 
-function StudentPage({ user, attendances, todayKey, onConfirm, onLogout }) {
+function StudentPage({ user, attendances, todayKey, onConfirm, attendanceNotice, onLogout }) {
   const [timeNotice, setTimeNotice] = useState(null);
   const recorded = attendances.find(
     (item) => item.studentId === user.id && item.date === todayKey,
@@ -917,6 +921,7 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onLogout }) {
           Konfirmasi hanya dapat dilakukan satu kali setiap hari.
         </p>
       </section>
+      {attendanceNotice && <p className="student-error">{attendanceNotice}</p>}
       {timeNotice && (
         <div
           className="modal-backdrop"
