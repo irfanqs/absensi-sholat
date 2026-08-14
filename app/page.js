@@ -1275,18 +1275,28 @@ function Students({
         usernames.add(username);
         return true;
       });
-      const { error } = await supabase.from("students").insert(
-        additions.map((item) => ({
+      const payload = additions.map((item) => ({
           id: String(item.id),
           nis: item.nis || "",
           name: item.name,
           class_name: item.className,
           gender: item.gender || null,
-          username: item.username,
+          username: String(item.username || "").trim(),
           password: item.password,
-        })),
-        { onConflict: "username", ignoreDuplicates: true },
-      );
+        }));
+      let { error } = await supabase
+        .from("students")
+        .insert(payload, { onConflict: "username", ignoreDuplicates: true });
+      if (error?.code === "23505") {
+        error = null;
+        for (const student of payload) {
+          const result = await supabase.from("students").insert(student);
+          if (result.error && result.error.code !== "23505") {
+            error = result.error;
+            break;
+          }
+        }
+      }
       if (error) {
         setPreview((current) => ({ ...current, error: error.message }));
         return;
