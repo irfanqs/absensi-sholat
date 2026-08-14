@@ -902,7 +902,15 @@ function AdminApp(props) {
   };
   const present = attendances.length;
   const absent = students.length - present;
-  const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
+  const standardClassOptions = [
+    ...["X", "XI", "XII"].flatMap((level) =>
+      Array.from({ length: 12 }, (_, index) => `${level}-${String(index + 1).padStart(2, "0")}`),
+    ),
+  ];
+  const classOptions = [...new Set([
+    ...standardClassOptions,
+    ...students.map((student) => student.className).filter(Boolean),
+  ])].sort((first, second) => first.localeCompare(second, "id", { numeric: true }));
   return (
     <div className="app-shell">
       <aside className={mobileMenuOpen ? "menu-open" : ""}>
@@ -985,6 +993,7 @@ function AdminApp(props) {
         {view === "students" && (
           <Students
             students={filteredStudents}
+            allStudents={students}
             classOptions={classOptions}
             query={query}
             setQuery={setQuery}
@@ -1203,6 +1212,7 @@ function Metric({ label, value, detail, tone }) {
 }
 function Students({
   students,
+  allStudents,
   classOptions,
   query,
   setQuery,
@@ -1224,7 +1234,7 @@ function Students({
           workbook.Sheets[workbook.SheetNames[0]],
           { header: 1, defval: "" },
         );
-        const imported = parseImportedRows(rows, students);
+        const imported = parseImportedRows(rows, allStudents);
         setPreview({
           fileName: file.name,
           students: imported.students,
@@ -1257,9 +1267,11 @@ function Students({
         return;
       }
       const usernames = new Set((existing || []).map((item) => item.username));
-      const additions = preview.students.filter(
-        (item) => !usernames.has(item.username),
-      );
+      const additions = preview.students.filter((item) => {
+        if (usernames.has(item.username)) return false;
+        usernames.add(item.username);
+        return true;
+      });
       const { error } = await supabase.from("students").upsert(
         additions.map((item) => ({
           id: String(item.id),
