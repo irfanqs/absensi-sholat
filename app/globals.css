@@ -88,6 +88,7 @@
 .import-class-groups .import-table{border:0;border-top:1px solid var(--line);border-radius:0;max-height:none}
 .import-modal .modal-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 .import-warning{margin:0;padding:10px 12px;border:1px solid #f0d3a5;border-radius:9px;background:#fff8e9;color:#8a5a13;font-size:13px;line-height:1.45}
+.student-number{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-right:10px;border-radius:8px;background:#f0f5f1;color:var(--muted);font-size:12px;font-weight:800;vertical-align:middle}
 .delete-modal{max-width:460px}
 .delete-icon{width:54px;height:54px;display:grid;place-items:center;border-radius:50%;background:#fdf1ef;color:#c93b31}
 .delete-modal h2{margin:0 0 8px}

@@ -1336,9 +1336,10 @@ function Students({
           <span>Password</span>
           <span>Aksi</span>
         </div>
-        {students.map((student) => (
+        {students.map((student, index) => (
           <div className="table-row" key={student.id}>
             <strong>
+              <span className="student-number">{index + 1}</span>
               {student.name}
             </strong>
             <span>
