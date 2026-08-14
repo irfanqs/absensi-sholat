@@ -1394,26 +1394,6 @@ function ImportPreview({ preview, onClose, onConfirm }) {
                 </span>
               ))}
             </div>
-            <div className="import-class-groups">
-              {groupedStudents.map(([className, classStudents]) => (
-                <details key={className} open>
-                  <summary>
-                    <strong>{className}</strong>
-                    <span>{classStudents.length} siswa</span>
-                  </summary>
-                  <div className="import-table">
-                    {classStudents.map((student) => (
-                      <div key={student.id}>
-                        <strong>{student.name}</strong>
-                        <span>
-                          NIS {student.nis || "-"} · {student.gender || "Gender belum diisi"}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              ))}
-            </div>
           </>
         )}
         <div className="modal-actions">
