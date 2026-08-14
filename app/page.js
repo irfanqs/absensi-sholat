@@ -88,6 +88,7 @@ function normalizeImportHeader(value) {
 function normalizeStudentName(value) {
   return String(value || "")
     .toLowerCase()
+    .replace(/^(')?([a-z])/, (_, apostrophe = "", letter) => `${apostrophe}${letter.toUpperCase()}`)
     .replace(/(^|[\s-])([a-z])/g, (_, separator, letter) => `${separator}${letter.toUpperCase()}`)
     .trim();
 }
