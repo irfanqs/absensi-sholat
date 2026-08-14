@@ -79,4 +79,9 @@
 .import-table strong{font-size:14px}
 .import-table span{font-size:12px;color:var(--muted)}
 .import-modal .modal-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.delete-modal{max-width:460px}
+.delete-icon{width:54px;height:54px;display:grid;place-items:center;border-radius:50%;background:#fdf1ef;color:#c93b31}
+.delete-modal h2{margin:0 0 8px}
+.delete-modal .muted{margin:0;line-height:1.55}
+.delete-modal .modal-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 @media(max-width:520px){.spin-card{margin-top:44px;padding:34px 20px;border-radius:16px}.wheel-wrap{width:min(100%,290px)}.wheel-label b{top:14%;font-size:13px}}
