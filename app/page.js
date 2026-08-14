@@ -1276,6 +1276,7 @@ function Students({
           students: imported.students,
           excludedNonIslam: imported.excludedNonIslam,
           duplicates: imported.duplicates,
+          noNewStudents: !imported.students.length && Boolean(noNewStudentsMessage),
           error: imported.students.length
             ? ""
             : noNewStudentsMessage
@@ -1288,6 +1289,7 @@ function Students({
           students: [],
           excludedNonIslam: [],
           duplicates: [],
+          noNewStudents: false,
           error: error.message,
         });
       }
@@ -1461,12 +1463,18 @@ function ImportPreview({ preview, onClose, onConfirm }) {
         <div>
           <p className="eyebrow">KONFIRMASI IMPORT</p>
           <h2>
-            {preview.error ? "File belum bisa diimpor" : "Periksa data murid"}
+            {preview.noNewStudents
+              ? "Data sudah tersimpan"
+              : preview.error
+                ? "File belum bisa diimpor"
+                : "Periksa data murid"}
           </h2>
           <p className="muted">{preview.fileName}</p>
         </div>
         {preview.error ? (
-          <p className="form-error">{preview.error}</p>
+          <p className={preview.noNewStudents ? "import-info" : "form-error"}>
+            {preview.error}
+          </p>
         ) : (
           <>
             <p className="import-summary">
