@@ -1349,6 +1349,14 @@ function Students({
 }
 
 function ImportPreview({ preview, onClose, onConfirm }) {
+  const groupedStudents = Object.entries(
+    preview.students.reduce((groups, student) => {
+      const className = student.className || "Kelas belum diatur";
+      if (!groups[className]) groups[className] = [];
+      groups[className].push(student);
+      return groups;
+    }, {}),
+  ).sort(([first], [second]) => first.localeCompare(second, "id", { numeric: true }));
   return (
     <div className="modal-backdrop">
       <section className="student-modal import-modal">
@@ -1379,21 +1387,33 @@ function ImportPreview({ preview, onClose, onConfirm }) {
                 dikecualikan.
               </p>
             )}
-            <div className="import-table">
-              {preview.students.slice(0, 12).map((student) => (
-                <div key={student.id}>
-                  <strong>{student.name}</strong>
-                  <span>
-                    NIS {student.nis || "-"} ·{" "}
-                    {student.gender || "Gender belum diisi"} · Kelas{" "}
-                    {student.className || "-"}
-                  </span>
-                </div>
+            <div className="import-class-summary">
+              {groupedStudents.map(([className, classStudents]) => (
+                <span key={className}>
+                  <strong>{className}</strong> {classStudents.length} siswa
+                </span>
               ))}
             </div>
-            {preview.students.length > 12 && (
-              <p className="muted">Menampilkan 12 data pertama.</p>
-            )}
+            <div className="import-class-groups">
+              {groupedStudents.map(([className, classStudents]) => (
+                <details key={className} open>
+                  <summary>
+                    <strong>{className}</strong>
+                    <span>{classStudents.length} siswa</span>
+                  </summary>
+                  <div className="import-table">
+                    {classStudents.map((student) => (
+                      <div key={student.id}>
+                        <strong>{student.name}</strong>
+                        <span>
+                          NIS {student.nis || "-"} · {student.gender || "Gender belum diisi"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
           </>
         )}
         <div className="modal-actions">

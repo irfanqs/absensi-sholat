@@ -78,6 +78,14 @@
 .import-table>div:last-child{border-bottom:0}
 .import-table strong{font-size:14px}
 .import-table span{font-size:12px;color:var(--muted)}
+.import-class-summary{display:flex;gap:8px;flex-wrap:wrap}
+.import-class-summary span{padding:8px 10px;border-radius:8px;background:var(--mint);color:var(--green-deep);font-size:12px}
+.import-class-groups{display:grid;gap:8px;max-height:420px;overflow:auto}
+.import-class-groups details{border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden}
+.import-class-groups summary{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;cursor:pointer;list-style:none;color:var(--green-deep)}
+.import-class-groups summary::-webkit-details-marker{display:none}
+.import-class-groups summary span{font-size:12px;color:var(--muted)}
+.import-class-groups .import-table{border:0;border-top:1px solid var(--line);border-radius:0;max-height:none}
 .import-modal .modal-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 .import-warning{margin:0;padding:10px 12px;border:1px solid #f0d3a5;border-radius:9px;background:#fff8e9;color:#8a5a13;font-size:13px;line-height:1.45}
 .delete-modal{max-width:460px}
