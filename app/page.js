@@ -1261,6 +1261,16 @@ function Students({
           { header: 1, defval: "" },
         );
         const imported = parseImportedRows(rows, allStudents);
+        const noNewStudentsMessage = [
+          imported.duplicates.length
+            ? `${imported.duplicates.length} data duplikat berdasarkan NIS`
+            : "",
+          imported.excludedNonIslam.length
+            ? `${imported.excludedNonIslam.length} data bukan agama IS`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" dan ");
         setPreview({
           fileName: file.name,
           students: imported.students,
@@ -1268,7 +1278,9 @@ function Students({
           duplicates: imported.duplicates,
           error: imported.students.length
             ? ""
-            : "Tidak ada data murid yang bisa dibaca.",
+            : noNewStudentsMessage
+              ? `Tidak ada data baru yang bisa ditambahkan: ${noNewStudentsMessage}.`
+              : "Tidak ada data murid yang bisa dibaca.",
         });
       } catch (error) {
         setPreview({
