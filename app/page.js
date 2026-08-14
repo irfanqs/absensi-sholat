@@ -1149,13 +1149,15 @@ function Dashboard({ present, absent, total, attendances }) {
                 <div className="attendance-person">
                   <strong>{item.studentName}</strong>
                   <span className="attendance-class">
-                    Kelas {item.className} ·{" "}
-                    <b className={item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
-                      {item.status || "Hadir"}
-                    </b>
+                    Kelas {item.className}
                   </span>
                 </div>
-                <time>{item.time}</time>
+                <div className="attendance-meta">
+                  <b className={item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
+                    {item.status || "Hadir"}
+                  </b>
+                  <time>{item.time}</time>
+                </div>
               </div>
             ))}
           </div>
