@@ -85,6 +85,23 @@ function normalizeImportHeader(value) {
     .replace(/[\s./_-]/g, "");
 }
 
+async function fetchAllSupabaseRows(table, columns = "*") {
+  const pageSize = 1000;
+  const rows = [];
+  let page = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .order("created_at", { ascending: table === "students" })
+      .range(page * pageSize, page * pageSize + pageSize - 1);
+    if (error) return { data: null, error };
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) return { data: rows, error: null };
+    page += 1;
+  }
+}
+
 function parseImportedRows(rows, existingStudents = []) {
   const headerIndex = rows.findIndex((row) =>
     row.some((cell) =>
@@ -252,16 +269,14 @@ export default function Home() {
     let active = true;
     async function loadData() {
       if (supabase) {
-        const [
-          { data: remoteStudents, error: studentsError },
-          { data: remoteAttendances, error: attendancesError },
-        ] = await Promise.all([
-          supabase.from("students").select("*").order("created_at"),
-          supabase
-            .from("attendances")
-            .select("*")
-            .order("created_at", { ascending: false }),
+        const [studentsResult, attendancesResult] = await Promise.all([
+          fetchAllSupabaseRows("students"),
+          fetchAllSupabaseRows("attendances"),
         ]);
+        const remoteStudents = studentsResult.data;
+        const remoteAttendances = attendancesResult.data;
+        const studentsError = studentsResult.error;
+        const attendancesError = attendancesResult.error;
         if (studentsError || attendancesError)
           setNotice(
             "Database belum siap. Jalankan schema Supabase terlebih dahulu.",
@@ -1259,9 +1274,10 @@ function Students({
   async function confirmImport() {
     if (!preview?.students?.length) return;
     if (supabase) {
-      const { data: existing, error: readError } = await supabase
-        .from("students")
-        .select("username");
+      const { data: existing, error: readError } = await fetchAllSupabaseRows(
+        "students",
+        "username",
+      );
       if (readError) {
         setPreview((current) => ({ ...current, error: readError.message }));
         return;
