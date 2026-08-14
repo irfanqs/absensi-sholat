@@ -204,6 +204,7 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [spinPassed, setSpinPassed] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [menstruationDecision, setMenstruationDecision] = useState(null);
 
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
@@ -315,6 +316,9 @@ export default function Home() {
     } else
       localStorage.setItem("dzuhur-attendances", JSON.stringify(attendances));
   }, [attendances, ready]);
+  useEffect(() => {
+    if (!user || user.role !== "student") setMenstruationDecision(null);
+  }, [user]);
 
   const todayAttendance = attendances.filter((item) => item.date === todayKey);
   const filteredStudents = useMemo(
@@ -373,6 +377,27 @@ export default function Home() {
           minute: "2-digit",
           timeZone: "Asia/Jakarta",
         }).format(new Date()),
+        status: "Hadir",
+      },
+      ...attendances,
+    ]);
+  }
+
+  function recordMenstruation() {
+    if (attendances.some((item) => item.studentId === user.id && item.date === todayKey)) return;
+    setAttendances([
+      {
+        id: createId(),
+        studentId: user.id,
+        studentName: user.name,
+        className: user.className,
+        date: todayKey,
+        time: new Intl.DateTimeFormat("id-ID", {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Asia/Jakarta",
+        }).format(new Date()),
+        status: "Haid",
       },
       ...attendances,
     ]);
@@ -429,6 +454,21 @@ export default function Home() {
     );
   if (!user) return <Login notice={notice} onLogin={login} />;
   if (user.role === "student") {
+    const recordedToday = attendances.some(
+      (item) => item.studentId === user.id && item.date === todayKey,
+    );
+    if (user.gender === "Perempuan" && !recordedToday && menstruationDecision === null)
+      return (
+        <MenstruationPage
+          user={user}
+          onHaid={recordMenstruation}
+          onContinue={() => setMenstruationDecision(false)}
+          onLogout={() => {
+            localStorage.removeItem("dzuhur-session");
+            setUser(null);
+          }}
+        />
+      );
     if (!spinPassed)
       return (
         <SpinWheel
@@ -686,6 +726,39 @@ function SpinWheel({ user, onPass, onLogout }) {
   );
 }
 
+function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
+  return (
+    <main className="student-shell">
+      <header>
+        <Logo />
+        <button className="text-button" onClick={onLogout}>
+          Keluar <SignOut size={18} />
+        </button>
+      </header>
+      <section className="confirm-card menstruation-card">
+        <div className="prayer-icon menstruation-icon">♥</div>
+        <p className="eyebrow">KONDISI HARI INI</p>
+        <h1>Apakah kamu sedang haid?</h1>
+        <p>
+          {user.name} · Kelas {user.className}. Pilih kondisi yang sesuai untuk
+          pencatatan hari ini.
+        </p>
+        <div className="menstruation-actions">
+          <button className="secondary large" onClick={onHaid}>
+            Ya, sedang haid
+          </button>
+          <button className="primary large" onClick={onContinue}>
+            Tidak, lanjutkan
+          </button>
+        </div>
+        <p className="privacy-note">
+          Pilihan haid akan dicatat sebagai status Haid dan melewati spinwheel.
+        </p>
+      </section>
+    </main>
+  );
+}
+
 function StudentPage({ user, attendances, todayKey, onConfirm, onLogout }) {
   const [timeNotice, setTimeNotice] = useState(null);
   const recorded = attendances.find(
@@ -726,7 +799,9 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onLogout }) {
             <p className="eyebrow">SUDAH TERCATAT</p>
             <h1>Terima kasih, {user.name.split(" ")[0]}.</h1>
             <p>
-              Absensi sholat Dzuhur Anda tercatat pukul{" "}
+              {recorded.status === "Haid"
+                ? "Status haid Anda tercatat"
+                : "Absensi sholat Dzuhur Anda tercatat"} pukul{" "}
               <strong>{recorded.time}</strong>.
             </p>
           </>
@@ -943,7 +1018,9 @@ function Dashboard({ present, absent, total, attendances }) {
               <div key={item.id}>
                 <span className="person-initial">{item.studentName[0]}</span>
                 <strong>{item.studentName}</strong>
-                <span className="attendance-class">Kelas {item.className}</span>
+                <span className={item.status === "Haid" ? "attendance-class period" : "attendance-class"}>
+                  Kelas {item.className} · {item.status || "Hadir"}
+                </span>
                 <time>{item.time}</time>
               </div>
             ))}
@@ -1057,10 +1134,10 @@ function ReportPage({ students, history }) {
           records.map((item) => (
             <div key={item.id}>
               <span className="person-initial">{item.studentName[0]}</span>
-              <div>
-                <strong>{item.studentName}</strong>
-                <span>Kelas {item.className}</span>
-              </div>
+                <div>
+                  <strong>{item.studentName}</strong>
+                  <span>Kelas {item.className} · {item.status || "Hadir"}</span>
+                </div>
               <time>
                 {new Intl.DateTimeFormat("id-ID", {
                   day: "numeric",
