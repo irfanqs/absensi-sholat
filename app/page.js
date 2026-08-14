@@ -85,6 +85,13 @@ function normalizeImportHeader(value) {
     .replace(/[\s./_-]/g, "");
 }
 
+function normalizeStudentName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/(^|[\s'-])([a-z])/g, (_, separator, letter) => `${separator}${letter.toUpperCase()}`)
+    .trim();
+}
+
 async function fetchAllSupabaseRows(table, columns = "*") {
   const pageSize = 1000;
   const rows = [];
@@ -163,7 +170,7 @@ function parseImportedRows(rows, existingStudents = []) {
         )
       )
         return null;
-      const name = String(row[nameIndex] || "").trim();
+      const name = normalizeStudentName(row[nameIndex]);
       const nis = String(nisIndex >= 0 ? row[nisIndex] || "" : "").trim();
       const religion = String(row[religionIndex] || "")
         .trim()
@@ -285,7 +292,7 @@ export default function Home() {
           const remote = remoteStudents.map((item) => ({
             id: item.id,
             nis: item.nis || "",
-            name: item.name,
+            name: normalizeStudentName(item.name),
             className: item.class_name,
             gender: item.gender || "",
             username: item.username,
@@ -456,7 +463,7 @@ export default function Home() {
     const value = {
       id: editing?.id || createId(),
       nis: form.get("nis") || "",
-      name: form.get("name"),
+          name: normalizeStudentName(form.get("name")),
       className: form.get("className"),
       gender: form.get("gender") || "",
       username: form.get("username"),
@@ -1294,7 +1301,7 @@ function Students({
       const payload = additions.map((item) => ({
           id: String(item.id),
           nis: item.nis || "",
-          name: item.name,
+          name: normalizeStudentName(item.name),
           class_name: item.className,
           gender: item.gender || null,
           username: String(item.username || "").trim(),
