@@ -823,21 +823,22 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onLogout }) {
     (item) => item.studentId === user.id && item.date === todayKey,
   );
   function handleConfirmation() {
-    const minutes = jakartaMinutesNow();
-    if (minutes < 690) {
-      setTimeNotice({
-        title: "Konfirmasi belum dibuka",
-        message: "Konfirmasi sholat Dzuhur tersedia mulai pukul 11.30 WIB.",
-      });
-      return;
-    }
-    if (minutes > 900) {
-      setTimeNotice({
-        title: "Waktu konfirmasi sudah terlewat",
-        message: "Harap konfirmasi ke guru bila terjadi kesalahan.",
-      });
-      return;
-    }
+    // Validasi jam 11.30-15.00 dinonaktifkan sementara untuk testing.
+    // const minutes = jakartaMinutesNow();
+    // if (minutes < 690) {
+    //   setTimeNotice({
+    //     title: "Konfirmasi belum dibuka",
+    //     message: "Konfirmasi sholat Dzuhur tersedia mulai pukul 11.30 WIB.",
+    //   });
+    //   return;
+    // }
+    // if (minutes > 900) {
+    //   setTimeNotice({
+    //     title: "Waktu konfirmasi sudah terlewat",
+    //     message: "Harap konfirmasi ke guru bila terjadi kesalahan.",
+    //   });
+    //   return;
+    // }
     onConfirm();
   }
   return (
