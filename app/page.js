@@ -1246,16 +1246,49 @@ function Students({
     };
     reader.readAsArrayBuffer(file);
   }
-  function confirmImport() {
-    const current = JSON.parse(localStorage.getItem("dzuhur-students") || "[]");
-    const usernames = new Set(current.map((item) => item.username));
-    localStorage.setItem(
-      "dzuhur-students",
-      JSON.stringify([
-        ...current,
-        ...preview.students.filter((item) => !usernames.has(item.username)),
-      ]),
-    );
+  async function confirmImport() {
+    if (!preview?.students?.length) return;
+    if (supabase) {
+      const { data: existing, error: readError } = await supabase
+        .from("students")
+        .select("username");
+      if (readError) {
+        setPreview((current) => ({ ...current, error: readError.message }));
+        return;
+      }
+      const usernames = new Set((existing || []).map((item) => item.username));
+      const additions = preview.students.filter(
+        (item) => !usernames.has(item.username),
+      );
+      const { error } = await supabase.from("students").upsert(
+        additions.map((item) => ({
+          id: String(item.id),
+          nis: item.nis || "",
+          name: item.name,
+          class_name: item.className,
+          gender: item.gender || null,
+          username: item.username,
+          password: item.password,
+        })),
+        { onConflict: "id" },
+      );
+      if (error) {
+        setPreview((current) => ({ ...current, error: error.message }));
+        return;
+      }
+    } else {
+      const current = JSON.parse(
+        localStorage.getItem("dzuhur-students") || "[]",
+      );
+      const usernames = new Set(current.map((item) => item.username));
+      localStorage.setItem(
+        "dzuhur-students",
+        JSON.stringify([
+          ...current,
+          ...preview.students.filter((item) => !usernames.has(item.username)),
+        ]),
+      );
+    }
     window.location.reload();
   }
   return (
