@@ -1115,7 +1115,7 @@ function Dashboard({ present, absent, total, attendances }) {
         <Metric
           label="Total murid"
           value={total}
-          detail="Dari empat kelas"
+          detail="Dari 36 kelas"
           tone="plain"
         />
       </section>
