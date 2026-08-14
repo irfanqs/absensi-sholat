@@ -461,7 +461,7 @@ export default function Home() {
     ]);
   }
 
-  function saveStudent(event) {
+  async function saveStudent(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const value = {
@@ -480,6 +480,24 @@ export default function Home() {
     ) {
       setNotice("Username sudah digunakan.");
       return;
+    }
+    if (supabase) {
+      const { error } = await supabase.from("students").upsert(
+        {
+          id: String(value.id),
+          nis: value.nis,
+          name: value.name,
+          class_name: value.className,
+          gender: value.gender || null,
+          username: value.username,
+          password: value.password,
+        },
+        { onConflict: "id" },
+      );
+      if (error) {
+        setNotice(`Gagal menyimpan data murid: ${error.message}`);
+        return;
+      }
     }
     setStudents(
       editing
@@ -567,8 +585,9 @@ export default function Home() {
       setQuery={setQuery}
       classFilter={classFilter}
       setClassFilter={setClassFilter}
-      filteredStudents={filteredStudents}
-      editing={editing}
+       filteredStudents={filteredStudents}
+       notice={notice}
+       editing={editing}
       setEditing={setEditing}
       onSave={saveStudent}
        onDelete={requestDelete}
@@ -916,6 +935,7 @@ function AdminApp(props) {
     classFilter,
     setClassFilter,
     filteredStudents,
+    notice,
     editing,
     setEditing,
     onSave,
@@ -1006,6 +1026,7 @@ function AdminApp(props) {
             </h1>
           </div>
         </header>
+        {notice && <p className="admin-notice">{notice}</p>}
         {view === "dashboard" && (
           <Dashboard
             present={present}
