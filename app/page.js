@@ -377,14 +377,18 @@ export default function Home() {
   const todayAttendance = attendances.filter((item) => item.date === todayKey);
   const filteredStudents = useMemo(
     () =>
-      students.filter(
-        (student) =>
-          (classFilter === "Semua kelas" ||
-            student.className === classFilter) &&
-          `${student.name} ${student.username}`
-            .toLowerCase()
-            .includes(query.toLowerCase()),
-      ),
+      students
+        .filter(
+          (student) =>
+            (classFilter === "Semua kelas" ||
+              student.className === classFilter) &&
+            `${student.name} ${student.username}`
+              .toLowerCase()
+              .includes(query.toLowerCase()),
+        )
+        .sort((first, second) =>
+          first.name.localeCompare(second.name, "id", { sensitivity: "base" }),
+        ),
     [students, classFilter, query],
   );
 
