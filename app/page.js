@@ -215,7 +215,7 @@ function Logo() {
 
 export default function Home() {
   const router = useRouter();
-  const [students, setStudents] = useState(initialStudents);
+  const [students, setStudents] = useState(supabase ? [] : initialStudents);
   const [attendances, setAttendances] = useState([]);
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
@@ -261,14 +261,9 @@ export default function Home() {
             username: item.username,
             password: item.password,
           }));
-          const localStudents = JSON.parse(
-            localStorage.getItem("dzuhur-students") || "[]",
-          );
-          const usernames = new Set(remote.map((item) => item.username));
-          setStudents([
-            ...remote,
-            ...localStudents.filter((item) => !usernames.has(item.username)),
-          ]);
+          setStudents(remote);
+        } else if (supabase) {
+          setStudents([]);
         } else {
           const localStudents = JSON.parse(
             localStorage.getItem("dzuhur-students") || "[]",
