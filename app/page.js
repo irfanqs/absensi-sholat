@@ -485,8 +485,9 @@ export default function Home() {
   async function saveStudent(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const isEditing = Boolean(editing?.id);
     const value = {
-      id: editing?.id || createId(),
+      id: isEditing ? editing.id : createId(),
       nis: form.get("nis") || "",
       name: normalizeStudentName(form.get("name")),
       className: form.get("className"),
@@ -511,7 +512,7 @@ export default function Home() {
         username: value.username,
         password: value.password,
       };
-      let result = editing
+      let result = isEditing
         ? await supabase
             .from("students")
             .update(payload)
@@ -519,7 +520,7 @@ export default function Home() {
             .select("id")
             .maybeSingle()
         : await supabase.from("students").insert({ id: String(value.id), ...payload });
-      if (editing && !result.error && !result.data) {
+      if (isEditing && !result.error && !result.data) {
         result = await supabase
           .from("students")
           .update(payload)
@@ -528,7 +529,7 @@ export default function Home() {
           .maybeSingle();
       }
       const { error } = result;
-      if (editing && !error && !result.data) {
+      if (isEditing && !error && !result.data) {
         setNotice("Data murid tidak ditemukan di database. Muat ulang data lalu coba lagi.");
         return;
       }
@@ -538,7 +539,7 @@ export default function Home() {
       }
     }
     setStudents(
-      editing
+      isEditing
         ? students.map((item) => (item.id === value.id ? value : item))
         : [...students, value],
     );
