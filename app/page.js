@@ -551,21 +551,6 @@ export default function Home() {
     );
   if (!user) return <Login notice={notice} onLogin={login} />;
   if (user.role === "student") {
-    const recordedToday = attendances.some(
-      (item) => item.studentId === user.id && item.date === todayKey,
-    );
-    if (user.gender === "Perempuan" && !recordedToday && menstruationDecision === null)
-      return (
-        <MenstruationPage
-          user={user}
-          onHaid={recordMenstruation}
-          onContinue={() => setMenstruationDecision(false)}
-          onLogout={() => {
-            localStorage.removeItem("dzuhur-session");
-            setUser(null);
-          }}
-        />
-      );
     if (!spinPassed)
       return (
         <SpinWheel
@@ -587,6 +572,7 @@ export default function Home() {
         attendances={attendances}
         todayKey={todayKey}
         onConfirm={confirmPrayer}
+        onHaid={recordMenstruation}
         attendanceNotice={attendanceNotice}
         onLogout={() => {
           localStorage.removeItem("dzuhur-session");
@@ -858,7 +844,7 @@ function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
   );
 }
 
-function StudentPage({ user, attendances, todayKey, onConfirm, attendanceNotice, onLogout }) {
+function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanceNotice, onLogout }) {
   const [timeNotice, setTimeNotice] = useState(null);
   const recorded = attendances.find(
     (item) => item.studentId === user.id && item.date === todayKey,
@@ -912,9 +898,16 @@ function StudentPage({ user, attendances, todayKey, onConfirm, attendanceNotice,
             <p>
               {user.name} · Kelas {user.className}
             </p>
-            <button className="primary large" onClick={handleConfirmation}>
-              Saya sudah sholat Dzuhur
-            </button>
+            <div className="student-confirm-actions">
+              <button className="primary large" onClick={handleConfirmation}>
+                Saya sudah sholat Dzuhur
+              </button>
+              {user.gender === "Perempuan" && (
+                <button className="secondary large" onClick={onHaid}>
+                  Tidak, saya sedang Haid
+                </button>
+              )}
+            </div>
           </>
         )}
         <p className="privacy-note">
