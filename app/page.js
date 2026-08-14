@@ -1266,13 +1266,16 @@ function Students({
         setPreview((current) => ({ ...current, error: readError.message }));
         return;
       }
-      const usernames = new Set((existing || []).map((item) => item.username));
+      const usernames = new Set(
+        (existing || []).map((item) => String(item.username || "").trim()),
+      );
       const additions = preview.students.filter((item) => {
-        if (usernames.has(item.username)) return false;
-        usernames.add(item.username);
+        const username = String(item.username || "").trim();
+        if (!username || usernames.has(username)) return false;
+        usernames.add(username);
         return true;
       });
-      const { error } = await supabase.from("students").upsert(
+      const { error } = await supabase.from("students").insert(
         additions.map((item) => ({
           id: String(item.id),
           nis: item.nis || "",
@@ -1282,7 +1285,7 @@ function Students({
           username: item.username,
           password: item.password,
         })),
-        { onConflict: "id" },
+        { onConflict: "username", ignoreDuplicates: true },
       );
       if (error) {
         setPreview((current) => ({ ...current, error: error.message }));
