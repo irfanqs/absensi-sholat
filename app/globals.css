@@ -22,7 +22,7 @@
   .app-shell{align-content:start}
   .admin-main{padding-top:18px}
   .students-panel{margin-top:8px}
-  .table-actions select{padding-right:36px}
+  .table-actions select{-webkit-appearance:none;appearance:none;padding-right:36px;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2365746d%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E");background-repeat:no-repeat;background-position:calc(100% - 10px) center;background-size:16px}
   .attendance-list>div{grid-template-columns:34px minmax(0,1fr) auto auto}
   .attendance-list>div .attendance-class{display:block;color:var(--green-deep);font-size:12px;font-weight:700;white-space:nowrap}
   .attendance-list time{font-size:12px;min-width:38px}
@@ -122,8 +122,10 @@
 .status-badge{padding:5px 10px;font-size:12px}
 @media(min-width:681px){.attendance-list>div{grid-template-columns:34px minmax(0,1fr) auto}}
 @media(max-width:680px){.attendance-list>div{grid-template-columns:32px minmax(0,1fr) auto}}
-select{-webkit-appearance:none;appearance:none;padding-right:36px!important;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2365746d%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E");background-repeat:no-repeat;background-position:calc(100% - 10px) center;background-size:16px}
+select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;background-image:none}
+.table-actions select{-webkit-appearance:none;appearance:none;padding-right:36px!important;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2365746d%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E");background-repeat:no-repeat;background-position:calc(100% - 10px) center;background-size:16px}
 @media(max-width:520px){.spin-card{margin-top:44px;padding:34px 20px;border-radius:16px}.wheel-wrap{width:min(100%,290px)}.wheel-label b{top:14%;font-size:13px}}
 .report-export{display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 8px 18px rgba(23,107,69,.16)}
 .report-export:hover{background:#105b38;border-color:#105b38;color:#fff}
 @media(max-width:680px){.report-export{grid-column:1/-1;width:100%}}
+.report-controls select{-webkit-appearance:none;appearance:none;min-height:46px;padding-right:36px!important;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2365746d%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E");background-repeat:no-repeat;background-position:calc(100% - 10px) center;background-size:16px}
