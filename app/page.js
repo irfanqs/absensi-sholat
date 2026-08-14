@@ -494,19 +494,23 @@ export default function Home() {
         ? await supabase
             .from("students")
             .update(payload)
-            .eq("id", String(value.id))
+            .eq("username", editing.username)
             .select("id")
             .maybeSingle()
         : await supabase.from("students").insert({ id: String(value.id), ...payload });
-      if (editing && !result.error && !result.data && editing.username) {
+      if (editing && !result.error && !result.data) {
         result = await supabase
           .from("students")
           .update(payload)
-          .eq("username", editing.username)
+          .eq("id", String(value.id))
           .select("id")
           .maybeSingle();
       }
       const { error } = result;
+      if (editing && !error && !result.data) {
+        setNotice("Data murid tidak ditemukan di database. Muat ulang data lalu coba lagi.");
+        return;
+      }
       if (error) {
         setNotice(`Gagal menyimpan data murid: ${error.message}`);
         return;
