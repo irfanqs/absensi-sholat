@@ -339,39 +339,56 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (!ready) return;
-    if (supabase) {
-      supabase.from("students").upsert(
-        students.map((item) => ({
-          id: String(item.id),
-          nis: item.nis || "",
-          name: item.name,
-          class_name: item.className,
-          gender: item.gender || null,
-          username: item.username,
-          password: item.password,
-        })),
-        { onConflict: "id" },
-      );
-    } else localStorage.setItem("dzuhur-students", JSON.stringify(students));
+    if (!supabase) localStorage.setItem("dzuhur-students", JSON.stringify(students));
   }, [students, ready]);
   useEffect(() => {
     if (!ready) return;
-    if (supabase) {
-      supabase.from("attendances").upsert(
-        attendances.map((item) => ({
-          id: String(item.id),
-          student_id: String(item.studentId),
-          student_name: item.studentName,
-          class_name: item.className,
-          date: item.date,
-          time: item.time,
-          status: item.status || "Hadir",
-        })),
-        { onConflict: "id" },
-      );
-    } else
+    if (!supabase)
       localStorage.setItem("dzuhur-attendances", JSON.stringify(attendances));
   }, [attendances, ready]);
+  useEffect(() => {
+    if (!supabase) return;
+    async function refreshRemoteData() {
+      const [studentsResult, attendancesResult] = await Promise.all([
+        fetchAllSupabaseRows("students"),
+        fetchAllSupabaseRows("attendances"),
+      ]);
+      if (studentsResult.data) {
+        setStudents(
+          studentsResult.data.map((item) => ({
+            id: item.id,
+            nis: item.nis || "",
+            name: normalizeStudentName(item.name),
+            className: item.class_name,
+            gender: item.gender || "",
+            username: item.username,
+            password: item.password,
+          })),
+        );
+      }
+      if (attendancesResult.data) {
+        setAttendances(
+          attendancesResult.data.map((item) => ({
+            id: item.id,
+            studentId: item.student_id,
+            studentName: item.student_name,
+            className: item.class_name,
+            date: item.date,
+            time: item.time,
+            status: item.status,
+          })),
+        );
+      }
+    }
+    const channel = supabase
+      .channel("absensi-sholat-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "students" }, refreshRemoteData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendances" }, refreshRemoteData)
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
   useEffect(() => {
     if (!user || user.role !== "student") setMenstruationDecision(null);
   }, [user]);

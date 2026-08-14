@@ -43,3 +43,15 @@ create policy "public can update attendances" on public.attendances for update u
 
 create index if not exists attendances_date_idx on public.attendances(date);
 create index if not exists attendances_student_idx on public.attendances(student_id);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'students'
+  ) then alter publication supabase_realtime add table public.students; end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'attendances'
+  ) then alter publication supabase_realtime add table public.attendances; end if;
+end $$;

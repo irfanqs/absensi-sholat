@@ -36,6 +36,8 @@ Aplikasi sudah memiliki client Supabase dan schema database di [supabase/schema.
 4. Isi `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 5. Tambahkan environment variable yang sama di Vercel.
 
+Schema juga mengaktifkan Realtime untuk tabel murid dan absensi, sehingga dashboard dapat menerima perubahan database tanpa refresh.
+
 Tanpa environment variable, aplikasi masih memakai `localStorage` sebagai fallback lokal. Schema saat ini memakai policy publik agar alur login demo lama tetap berjalan. Sebelum digunakan secara resmi, migrasikan login ke Supabase Auth dan ganti policy RLS agar data tidak dapat dibaca atau diubah publik.
 
 ## Prasyarat
