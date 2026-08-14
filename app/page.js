@@ -467,10 +467,10 @@ export default function Home() {
     const value = {
       id: editing?.id || createId(),
       nis: form.get("nis") || "",
-          name: normalizeStudentName(form.get("name")),
+      name: normalizeStudentName(form.get("name")),
       className: form.get("className"),
       gender: form.get("gender") || "",
-      username: form.get("username"),
+      username: String(form.get("username") || "").trim(),
       password: form.get("password"),
     };
     if (
@@ -482,18 +482,31 @@ export default function Home() {
       return;
     }
     if (supabase) {
-      const { error } = await supabase.from("students").upsert(
-        {
-          id: String(value.id),
-          nis: value.nis,
-          name: value.name,
-          class_name: value.className,
-          gender: value.gender || null,
-          username: value.username,
-          password: value.password,
-        },
-        { onConflict: "id" },
-      );
+      const payload = {
+        nis: value.nis,
+        name: value.name,
+        class_name: value.className,
+        gender: value.gender || null,
+        username: value.username,
+        password: value.password,
+      };
+      let result = editing
+        ? await supabase
+            .from("students")
+            .update(payload)
+            .eq("id", String(value.id))
+            .select("id")
+            .maybeSingle()
+        : await supabase.from("students").insert({ id: String(value.id), ...payload });
+      if (editing && !result.error && !result.data && editing.username) {
+        result = await supabase
+          .from("students")
+          .update(payload)
+          .eq("username", editing.username)
+          .select("id")
+          .maybeSingle();
+      }
+      const { error } = result;
       if (error) {
         setNotice(`Gagal menyimpan data murid: ${error.message}`);
         return;
