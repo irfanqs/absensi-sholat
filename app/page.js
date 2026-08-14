@@ -1288,6 +1288,7 @@ function Students({
         <div className="table-head">
           <span>Nama lengkap</span>
           <span>Kelas</span>
+          <span>Gender</span>
           <span>Username</span>
           <span>Password</span>
           <span>Aksi</span>
@@ -1296,12 +1297,16 @@ function Students({
           <div className="table-row" key={student.id}>
             <strong>
               {student.name}
-              <small className="gender-label">
-                {student.gender || "Gender belum diatur"}
-              </small>
             </strong>
             <span>
               <b className="class-chip">{student.className}</b>
+            </span>
+            <span>
+              {student.gender === "Perempuan"
+                ? "P"
+                : student.gender === "Laki-laki"
+                  ? "L"
+                  : "-"}
             </span>
             <span>{student.username}</span>
             <span className="password-text">{student.password}</span>
