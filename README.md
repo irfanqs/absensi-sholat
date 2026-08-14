@@ -33,7 +33,7 @@ Aplikasi sudah memiliki client Supabase dan schema database di [supabase/schema.
 1. Buat project di Supabase.
 2. Jalankan isi `supabase/schema.sql` di SQL Editor Supabase.
 3. Salin `.env.example` menjadi `.env.local` untuk lokal.
-4. Isi `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+4. Isi `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 5. Tambahkan environment variable yang sama di Vercel.
 
 Tanpa environment variable, aplikasi masih memakai `localStorage` sebagai fallback lokal. Schema saat ini memakai policy publik agar alur login demo lama tetap berjalan. Sebelum digunakan secara resmi, migrasikan login ke Supabase Auth dan ganti policy RLS agar data tidak dapat dibaca atau diubah publik.
