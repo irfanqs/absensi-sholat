@@ -680,7 +680,7 @@ function Login({ notice, onLogin }) {
             <input
               name="username"
               autoComplete="username"
-              placeholder="Contoh: 9A_Irfan"
+              placeholder="Contoh: 123456789"
               required
             />
           </label>
@@ -697,10 +697,6 @@ function Login({ notice, onLogin }) {
           <button className="primary" type="submit">
             Masuk ke aplikasi
           </button>
-          <p className="login-help">
-            Demo guru: <strong>guru</strong> dengan password{" "}
-            <strong>123</strong>
-          </p>
         </form>
       </section>
     </main>
