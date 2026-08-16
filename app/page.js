@@ -268,6 +268,8 @@ export default function Home() {
   const [spinPassed, setSpinPassed] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [menstruationDecision, setMenstruationDecision] = useState(null);
+  const [teacherPassword, setTeacherPassword] = useState("123");
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
 
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
@@ -329,6 +331,8 @@ export default function Home() {
       }
       const storedSession = localStorage.getItem("dzuhur-session");
       if (storedSession) setUser(JSON.parse(storedSession));
+      const storedTeacherPassword = localStorage.getItem("dzuhur-teacher-password");
+      if (storedTeacherPassword) setTeacherPassword(storedTeacherPassword);
       setSpinPassed(localStorage.getItem(spinKey) === "sholat");
       if (active) setReady(true);
     }
@@ -416,7 +420,7 @@ export default function Home() {
     const form = new FormData(event.currentTarget);
     const username = form.get("username").trim();
     const password = form.get("password");
-    if (username === "guru" && password === "123") {
+    if (username === "guru" && password === teacherPassword) {
       const session = { name: "Guru Admin", role: "admin" };
       setUser(session);
       localStorage.setItem("dzuhur-session", JSON.stringify(session));
@@ -433,6 +437,30 @@ export default function Home() {
       return;
     }
     setNotice("Username atau password belum sesuai.");
+  }
+
+  async function changePassword({ currentPassword, newPassword }) {
+    if (user.role === "admin") {
+      if (currentPassword !== teacherPassword) return "Password saat ini tidak sesuai.";
+      localStorage.setItem("dzuhur-teacher-password", newPassword);
+      setTeacherPassword(newPassword);
+      return "Password guru berhasil diubah.";
+    }
+    if (currentPassword !== user.password) return "Password saat ini tidak sesuai.";
+    if (supabase) {
+      const { error } = await supabase
+        .from("students")
+        .update({ password: newPassword })
+        .eq("id", String(user.id));
+      if (error) return `Gagal mengubah password: ${error.message}`;
+    }
+    const updatedUser = { ...user, password: newPassword };
+    setStudents((current) =>
+      current.map((student) => (student.id === user.id ? updatedUser : student)),
+    );
+    setUser(updatedUser);
+    localStorage.setItem("dzuhur-session", JSON.stringify(updatedUser));
+    return "Password murid berhasil diubah.";
   }
 
   async function recordAttendance(status) {
@@ -571,32 +599,52 @@ export default function Home() {
   if (user.role === "student") {
     if (!spinPassed)
       return (
-        <SpinWheel
+        <>
+          <SpinWheel
+            user={user}
+            onPass={() => {
+              localStorage.setItem(spinKey, "sholat");
+              setSpinPassed(true);
+              router.push("/dzuhur");
+            }}
+            onLogout={() => {
+              localStorage.removeItem("dzuhur-session");
+              setUser(null);
+            }}
+            onChangePassword={() => setPasswordModalOpen(true)}
+          />
+          {passwordModalOpen && (
+            <PasswordModal
+              role={user.role}
+              onClose={() => setPasswordModalOpen(false)}
+              onChangePassword={changePassword}
+            />
+          )}
+        </>
+      );
+    return (
+      <>
+        <StudentPage
           user={user}
-          onPass={() => {
-            localStorage.setItem(spinKey, "sholat");
-            setSpinPassed(true);
-            router.push("/dzuhur");
-          }}
+          attendances={attendances}
+          todayKey={todayKey}
+          onConfirm={confirmPrayer}
+          onHaid={recordMenstruation}
+          attendanceNotice={attendanceNotice}
+          onChangePassword={() => setPasswordModalOpen(true)}
           onLogout={() => {
             localStorage.removeItem("dzuhur-session");
             setUser(null);
           }}
         />
-      );
-    return (
-      <StudentPage
-        user={user}
-        attendances={attendances}
-        todayKey={todayKey}
-        onConfirm={confirmPrayer}
-        onHaid={recordMenstruation}
-        attendanceNotice={attendanceNotice}
-        onLogout={() => {
-          localStorage.removeItem("dzuhur-session");
-          setUser(null);
-        }}
-      />
+        {passwordModalOpen && (
+          <PasswordModal
+            role={user.role}
+            onClose={() => setPasswordModalOpen(false)}
+            onChangePassword={changePassword}
+          />
+        )}
+      </>
     );
   }
   return (
@@ -615,8 +663,10 @@ export default function Home() {
        notice={notice}
        editing={editing}
       setEditing={setEditing}
-      onSave={saveStudent}
+       onSave={saveStudent}
        onDelete={requestDelete}
+       onOpenPasswordChange={() => setPasswordModalOpen(true)}
+       onChangePassword={changePassword}
       onImport={(imported) =>
         setStudents((current) => {
           const usernames = new Set(current.map((item) => item.username));
@@ -630,7 +680,14 @@ export default function Home() {
         localStorage.removeItem("dzuhur-session");
         setUser(null);
       }}
-      />
+       />
+      {passwordModalOpen && (
+        <PasswordModal
+          role={user.role}
+          onClose={() => setPasswordModalOpen(false)}
+          onChangePassword={changePassword}
+        />
+      )}
       {deleteTarget && (
         <DeleteConfirm
           student={deleteTarget}
@@ -714,7 +771,7 @@ const wheelColors = [
 ];
 const wheelGradient = `conic-gradient(from 0deg, ${wheelColors.map((color, i) => `${color} ${i * 60}deg ${i * 60 + 58}deg, #ffffff ${i * 60 + 58}deg ${(i + 1) * 60}deg`).join(", ")})`;
 
-function SpinWheel({ user, onPass, onLogout }) {
+function SpinWheel({ user, onPass, onLogout, onChangePassword }) {
   const [rotation, setRotation] = useState(() =>
     Math.floor(Math.random() * 360),
   );
@@ -744,9 +801,14 @@ function SpinWheel({ user, onPass, onLogout }) {
     <main className="student-shell">
       <header>
         <Logo />
-        <button className="text-button" onClick={onLogout}>
-          Keluar <SignOut size={18} />
-        </button>
+        <div className="student-header-actions">
+          <button className="text-button" onClick={onChangePassword}>
+            Ganti password
+          </button>
+          <button className="text-button" onClick={onLogout}>
+            Keluar <SignOut size={18} />
+          </button>
+        </div>
       </header>
       <section className="confirm-card spin-card">
         <p className="eyebrow">PUTAR RODA DZUHUR</p>
@@ -858,7 +920,7 @@ function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
   );
 }
 
-function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanceNotice, onLogout }) {
+function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanceNotice, onLogout, onChangePassword }) {
   const [timeNotice, setTimeNotice] = useState(null);
   const recorded = attendances.find(
     (item) => item.studentId === user.id && item.date === todayKey,
@@ -886,9 +948,14 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
     <main className="student-shell">
       <header>
         <Logo />
-        <button className="text-button" onClick={onLogout}>
-          Keluar <SignOut size={18} />
-        </button>
+        <div className="student-header-actions">
+          <button className="text-button" onClick={onChangePassword}>
+            Ganti password
+          </button>
+          <button className="text-button" onClick={onLogout}>
+            Keluar <SignOut size={18} />
+          </button>
+        </div>
       </header>
       <section className="confirm-card">
         <div className="prayer-icon">
@@ -970,6 +1037,8 @@ function AdminApp(props) {
     setEditing,
     onSave,
     onDelete,
+    onOpenPasswordChange,
+    onChangePassword,
     onLogout,
   } = props;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1084,7 +1153,12 @@ function AdminApp(props) {
           />
         )}
         {view === "qr" && <QrPage />}
-        {view === "settings" && <SettingsPage onLogout={onLogout} />}
+        {view === "settings" && (
+          <SettingsPage
+            onLogout={onLogout}
+            onChangePassword={onOpenPasswordChange}
+          />
+        )}
       </main>
       {editing !== null && (
         <StudentModal
@@ -1654,7 +1728,7 @@ function QrPage() {
     </section>
   );
 }
-function SettingsPage({ onLogout }) {
+function SettingsPage({ onLogout, onChangePassword }) {
   return (
     <section className="simple-panel">
       <ClipboardText size={28} />
@@ -1663,6 +1737,15 @@ function SettingsPage({ onLogout }) {
         QR permanen memakai alamat web yang sedang dibuka dan mengarah ke
         halaman Dzuhur.
       </p>
+      <div className="settings-signout">
+        <div>
+          <strong>Ganti password</strong>
+          <span>Perbarui password akun guru secara berkala.</span>
+        </div>
+        <button className="secondary" onClick={onChangePassword}>
+          Ganti password
+        </button>
+      </div>
       <div className="settings-signout">
         <div>
           <strong>Keluar dari akun</strong>
@@ -1676,6 +1759,69 @@ function SettingsPage({ onLogout }) {
     </section>
   );
 }
+
+function PasswordModal({ role, onClose, onChangePassword }) {
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const currentPassword = String(form.get("currentPassword") || "");
+    const newPassword = String(form.get("newPassword") || "");
+    const confirmation = String(form.get("confirmation") || "");
+    if (newPassword.length < 3) {
+      setError("Password baru minimal 3 karakter.");
+      return;
+    }
+    if (newPassword !== confirmation) {
+      setError("Konfirmasi password belum sesuai.");
+      return;
+    }
+    setSaving(true);
+    const message = await onChangePassword({ currentPassword, newPassword });
+    setSaving(false);
+    if (!message.includes("berhasil")) {
+      setError(message);
+      return;
+    }
+    onClose();
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <form className="student-modal" onSubmit={submit}>
+        <div>
+          <p className="eyebrow">KEAMANAN AKUN</p>
+          <h2>Ganti password {role === "admin" ? "guru" : "murid"}</h2>
+          <p className="muted">Masukkan password saat ini dan password baru.</p>
+        </div>
+        <label>
+          Password saat ini
+          <input name="currentPassword" type="password" required autoComplete="current-password" />
+        </label>
+        <label>
+          Password baru
+          <input name="newPassword" type="password" required autoComplete="new-password" />
+        </label>
+        <label>
+          Konfirmasi password baru
+          <input name="confirmation" type="password" required autoComplete="new-password" />
+        </label>
+        {error && <p className="form-error">{error}</p>}
+        <div className="modal-actions">
+          <button type="button" className="secondary" onClick={onClose}>
+            Batal
+          </button>
+          <button type="submit" className="primary" disabled={saving}>
+            {saving ? "Menyimpan..." : "Simpan password"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function StudentModal({ student, classOptions, onClose, onSave }) {
   return (
     <div className="modal-backdrop">
