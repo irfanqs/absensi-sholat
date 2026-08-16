@@ -680,7 +680,7 @@ function Login({ notice, onLogin }) {
             <input
               name="username"
               autoComplete="username"
-              placeholder="Contoh: 123456789"
+              placeholder="Masukkan NIS Anda"
               required
             />
           </label>
