@@ -33,6 +33,7 @@ drop policy if exists "public can delete students" on public.students;
 drop policy if exists "public can read attendances" on public.attendances;
 drop policy if exists "public can insert attendances" on public.attendances;
 drop policy if exists "public can update attendances" on public.attendances;
+drop policy if exists "public can delete attendances" on public.attendances;
 create policy "public can read students" on public.students for select using (true);
 create policy "public can insert students" on public.students for insert with check (true);
 create policy "public can update students" on public.students for update using (true) with check (true);
@@ -40,6 +41,7 @@ create policy "public can delete students" on public.students for delete using (
 create policy "public can read attendances" on public.attendances for select using (true);
 create policy "public can insert attendances" on public.attendances for insert with check (true);
 create policy "public can update attendances" on public.attendances for update using (true) with check (true);
+create policy "public can delete attendances" on public.attendances for delete using (true);
 
 create index if not exists attendances_date_idx on public.attendances(date);
 create index if not exists attendances_student_idx on public.attendances(student_id);

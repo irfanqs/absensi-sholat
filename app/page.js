@@ -265,6 +265,7 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [attendanceNotice, setAttendanceNotice] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [attendanceDeleteTarget, setAttendanceDeleteTarget] = useState(null);
   const [menstruationDecision, setMenstruationDecision] = useState(null);
   const [teacherPassword, setTeacherPassword] = useState("123");
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
@@ -582,6 +583,27 @@ export default function Home() {
     setDeleteTarget(null);
   }
 
+  function requestCancelAttendance(record) {
+    setAttendanceDeleteTarget(record);
+  }
+
+  async function confirmCancelAttendance() {
+    if (!attendanceDeleteTarget) return;
+    const id = attendanceDeleteTarget.id;
+    if (supabase) {
+      const { error } = await supabase
+        .from("attendances")
+        .delete()
+        .eq("id", String(id));
+      if (error) {
+        setNotice(`Gagal membatalkan status: ${error.message}`);
+        return;
+      }
+    }
+    setAttendances((current) => current.filter((record) => record.id !== id));
+    setAttendanceDeleteTarget(null);
+  }
+
   if (!ready)
     return (
       <main className="session-loading">
@@ -638,6 +660,7 @@ export default function Home() {
        onSave={saveStudent}
        onDelete={requestDelete}
        onOpenPasswordChange={() => setPasswordModalOpen(true)}
+       onCancelAttendance={requestCancelAttendance}
       onImport={(imported) =>
         setStudents((current) => {
           const usernames = new Set(current.map((item) => item.username));
@@ -664,6 +687,13 @@ export default function Home() {
           student={deleteTarget}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={confirmDelete}
+        />
+      )}
+      {attendanceDeleteTarget && (
+        <CancelAttendanceConfirm
+          attendance={attendanceDeleteTarget}
+          onCancel={() => setAttendanceDeleteTarget(null)}
+          onConfirm={confirmCancelAttendance}
         />
       )}
     </>
@@ -1045,6 +1075,7 @@ function AdminApp(props) {
     onSave,
     onDelete,
     onOpenPasswordChange,
+    onCancelAttendance,
     onLogout,
   } = props;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1140,10 +1171,15 @@ function AdminApp(props) {
             students={students}
             classOptions={classOptions}
             attendances={attendances}
+            onCancelAttendance={onCancelAttendance}
           />
         )}
         {view === "reports" && (
-          <ReportPage students={students} history={history} />
+          <ReportPage
+            students={students}
+            history={history}
+            onCancelAttendance={onCancelAttendance}
+          />
         )}
         {view === "students" && (
           <Students
@@ -1232,7 +1268,7 @@ function UserMenu({ name, onChangePassword, onLogout, disabled = false }) {
   );
 }
 
-function Dashboard({ students, classOptions, attendances }) {
+function Dashboard({ students, classOptions, attendances, onCancelAttendance }) {
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const visibleStudents = students.filter(
     (student) => selectedClass === "Semua kelas" || student.className === selectedClass,
@@ -1295,6 +1331,12 @@ function Dashboard({ students, classOptions, attendances }) {
                     {item.status || "Hadir"}
                   </b>
                   <time>{item.time}</time>
+                  <button
+                    className="cancel-attendance"
+                    onClick={() => onCancelAttendance(item)}
+                  >
+                    Batalkan
+                  </button>
                 </div>
               </div>
             ))}
@@ -1309,7 +1351,7 @@ function Dashboard({ students, classOptions, attendances }) {
     </>
   );
 }
-function ReportPage({ students, history }) {
+function ReportPage({ students, history, onCancelAttendance }) {
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
   }).format(new Date());
@@ -1436,6 +1478,12 @@ function ReportPage({ students, history }) {
                   month: "short",
                 }).format(new Date(item.date + "T12:00:00"))}
                 <b>{item.time}</b>
+                <button
+                  className="cancel-attendance"
+                  onClick={() => onCancelAttendance(item)}
+                >
+                  Batalkan
+                </button>
               </time>
             </div>
           ))
@@ -1958,6 +2006,39 @@ function DeleteConfirm({ student, onCancel, onConfirm }) {
           </button>
           <button type="button" className="danger-button" onClick={onConfirm}>
             Hapus data
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CancelAttendanceConfirm({ attendance, onCancel, onConfirm }) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        className="student-modal delete-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="cancel-attendance-title"
+      >
+        <div className="delete-icon">
+          <WarningCircle size={30} weight="fill" />
+        </div>
+        <div>
+          <p className="eyebrow">KONFIRMASI PEMBATALAN</p>
+          <h2 id="cancel-attendance-title">Batalkan status absensi?</h2>
+          <p className="muted">
+            Status {attendance.status || "Hadir"} untuk <strong>{attendance.studentName}</strong> akan
+            dibatalkan dan dapat dikonfirmasi kembali.
+          </p>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="secondary" onClick={onCancel}>
+            Jangan batalkan
+          </button>
+          <button type="button" className="danger-button" onClick={onConfirm}>
+            Batalkan status
           </button>
         </div>
       </section>
