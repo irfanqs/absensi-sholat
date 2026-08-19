@@ -130,3 +130,5 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 @media(max-width:680px){.report-export{grid-column:1/-1;width:100%}}
 .report-controls select{-webkit-appearance:none;appearance:none;min-height:46px;padding-right:36px!important;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2365746d%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E");background-repeat:no-repeat;background-position:calc(100% - 10px) center;background-size:16px}
 .student-header-actions{display:flex;align-items:center;gap:14px}
+.haid-button{border:1px solid #efb0aa;background:#fff1ef;color:#b42318;border-radius:11px;padding:13px 18px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.haid-button:hover{background:#ffe3df}

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { QRCodeCanvas } from "qrcode.react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
@@ -254,7 +253,6 @@ function Logo() {
 }
 
 export default function Home() {
-  const router = useRouter();
   const [students, setStudents] = useState(supabase ? [] : initialStudents);
   const [attendances, setAttendances] = useState([]);
   const [user, setUser] = useState(null);
@@ -265,7 +263,6 @@ export default function Home() {
   const [editing, setEditing] = useState(null);
   const [notice, setNotice] = useState("");
   const [attendanceNotice, setAttendanceNotice] = useState("");
-  const [spinPassed, setSpinPassed] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [menstruationDecision, setMenstruationDecision] = useState(null);
   const [teacherPassword, setTeacherPassword] = useState("123");
@@ -274,7 +271,6 @@ export default function Home() {
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
   }).format(new Date());
-  const spinKey = "dzuhur-spin-" + todayKey;
 
   useEffect(() => {
     let active = true;
@@ -333,7 +329,6 @@ export default function Home() {
       if (storedSession) setUser(JSON.parse(storedSession));
       const storedTeacherPassword = localStorage.getItem("dzuhur-teacher-password");
       if (storedTeacherPassword) setTeacherPassword(storedTeacherPassword);
-      setSpinPassed(localStorage.getItem(spinKey) === "sholat");
       if (active) setReady(true);
     }
     loadData();
@@ -597,31 +592,7 @@ export default function Home() {
     );
   if (!user) return <Login notice={notice} onLogin={login} />;
   if (user.role === "student") {
-    if (!spinPassed)
-      return (
-        <>
-          <SpinWheel
-            user={user}
-            onPass={() => {
-              localStorage.setItem(spinKey, "sholat");
-              setSpinPassed(true);
-              router.push("/dzuhur");
-            }}
-            onLogout={() => {
-              localStorage.removeItem("dzuhur-session");
-              setUser(null);
-            }}
-            onChangePassword={() => setPasswordModalOpen(true)}
-          />
-          {passwordModalOpen && (
-            <PasswordModal
-              role={user.role}
-              onClose={() => setPasswordModalOpen(false)}
-              onChangePassword={changePassword}
-            />
-          )}
-        </>
-      );
+    // Fitur spinwheel dinonaktifkan karena tidak digunakan lagi.
     return (
       <>
         <StudentPage
@@ -905,7 +876,7 @@ function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
           pencatatan hari ini.
         </p>
         <div className="menstruation-actions">
-          <button className="secondary large" onClick={onHaid}>
+          <button className="haid-button large" onClick={onHaid}>
             Ya, sedang haid
           </button>
           <button className="primary large" onClick={onContinue}>
@@ -984,7 +955,7 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
                 Saya sudah sholat Dzuhur
               </button>
               {user.gender === "Perempuan" && (
-                <button className="secondary large" onClick={onHaid}>
+                <button className="haid-button large" onClick={onHaid}>
                   Tidak, saya sedang Haid
                 </button>
               )}
