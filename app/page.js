@@ -1395,7 +1395,7 @@ function ReportPage({ students, history }) {
         ) : (
           <div className="empty">
             <CalendarBlank size={28} />
-            Belum ada absensi pada periode ini.
+            <span>Belum ada absensi pada periode ini.</span>
           </div>
         )}
       </div>
