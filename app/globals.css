@@ -139,6 +139,7 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .user-menu{position:relative;z-index:10}
 .user-menu-trigger{display:grid;place-items:center;border:0;background:transparent;color:var(--green);border-radius:12px;padding:4px;cursor:pointer}
 .user-menu-trigger:hover{background:var(--mint)}
+.user-menu-trigger:disabled{opacity:.45;cursor:not-allowed;pointer-events:none}
 .user-menu-dropdown{position:absolute;right:0;top:calc(100% + 8px);width:210px;padding:6px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 30px rgba(18,61,42,.14)}
 .user-menu-name{padding:10px;border-bottom:1px solid var(--line);font-weight:750}
 .user-menu-dropdown button{width:100%;display:flex;align-items:center;justify-content:space-between;border:0;background:transparent;color:var(--ink);border-radius:8px;padding:11px 10px;text-align:left;cursor:pointer;font-weight:650}

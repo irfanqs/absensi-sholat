@@ -601,9 +601,9 @@ export default function Home() {
           attendances={attendances}
           todayKey={todayKey}
           onConfirm={confirmPrayer}
-          onHaid={recordMenstruation}
-          attendanceNotice={attendanceNotice}
-          onChangePassword={() => setPasswordModalOpen(true)}
+           onHaid={recordMenstruation}
+           attendanceNotice={attendanceNotice}
+           onChangePassword={() => setPasswordModalOpen(true)}
           onLogout={() => {
             localStorage.removeItem("dzuhur-session");
             setUser(null);
@@ -915,11 +915,12 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
     <main className="student-shell">
       <header>
         <Logo />
-        <UserMenu
-          name={user.name}
-          onChangePassword={onChangePassword}
-          onLogout={onLogout}
-        />
+          <UserMenu
+            name={user.name}
+            onChangePassword={onChangePassword}
+            onLogout={onLogout}
+            disabled={Boolean(timeNotice)}
+          />
       </header>
       <section className="confirm-card">
         <div className="prayer-icon">
@@ -970,7 +971,6 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
           <section className="student-modal time-notice">
             <WarningCircle size={32} weight="fill" />
             <div>
-              <p className="eyebrow">KONFIRMASI DZUHUR</p>
               <h2 id="time-notice-title">{timeNotice.title}</h2>
             </div>
             <p>{timeNotice.message}</p>
@@ -1143,8 +1143,11 @@ function NavButton({ active, onClick, icon, children }) {
   );
 }
 
-function UserMenu({ name, onChangePassword, onLogout }) {
+function UserMenu({ name, onChangePassword, onLogout, disabled = false }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   return (
     <div className="user-menu">
@@ -1154,6 +1157,7 @@ function UserMenu({ name, onChangePassword, onLogout }) {
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label="Buka menu pengguna"
+        disabled={disabled}
       >
         <UserCircle size={32} weight="regular" />
       </button>
