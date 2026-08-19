@@ -1505,9 +1505,9 @@ function ReportPage({ students, history, onCancelAttendance }) {
       </div>
       <div className="report-list">
         {records.length ? (
-          records.map((item) => (
+          records.map((item, index) => (
             <div key={item.id}>
-              <span className="person-initial">{item.studentName[0]}</span>
+              <span className="person-initial attendance-number">{index + 1}</span>
                 <div>
                   <strong>{item.studentName}</strong>
                   <span>Kelas {item.className} · {item.status || "Hadir"}</span>
