@@ -147,5 +147,5 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .haid-button{border:1px solid #efb0aa;background:#fff1ef;color:#b42318;border-radius:11px;padding:13px 18px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .haid-button:hover{background:#ffe3df}
 .report-export{white-space:nowrap}
-@media(max-width:680px){.report-controls{align-items:stretch}.report-controls label{align-self:stretch;grid-template-rows:auto 1fr;gap:8px}.report-controls label input,.report-controls label select{height:68px;min-height:68px}.report-controls .report-export{grid-column:1/-1;width:100%;min-height:58px}}
+@media(max-width:680px){.report-controls{align-items:stretch}.report-controls label{align-self:stretch;grid-template-rows:auto 1fr;gap:8px}.report-controls label input,.report-controls label select{height:46px;min-height:46px}.report-controls .report-export{grid-column:1/-1;width:100%;min-height:58px}}
 .settings-signout .danger-button svg{top:0!important}
