@@ -7,6 +7,7 @@ import { supabase } from "../lib/supabase";
 import {
   BookOpen,
   CalendarBlank,
+  CaretDown,
   CheckCircle,
   ClipboardText,
   DownloadSimple,
@@ -772,14 +773,12 @@ function SpinWheel({ user, onPass, onLogout, onChangePassword }) {
     <main className="student-shell">
       <header>
         <Logo />
-        <div className="student-header-actions">
-          <button className="text-button" onClick={onChangePassword}>
-            Ganti password
-          </button>
-          <button className="text-button" onClick={onLogout}>
-            Keluar <SignOut size={18} />
-          </button>
-        </div>
+        <UserMenu
+          name={user.name}
+          role="Murid"
+          onChangePassword={onChangePassword}
+          onLogout={onLogout}
+        />
       </header>
       <section className="confirm-card spin-card">
         <p className="eyebrow">PUTAR RODA DZUHUR</p>
@@ -918,14 +917,12 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
     <main className="student-shell">
       <header>
         <Logo />
-        <div className="student-header-actions">
-          <button className="text-button" onClick={onChangePassword}>
-            Ganti password
-          </button>
-          <button className="text-button" onClick={onLogout}>
-            Keluar <SignOut size={18} />
-          </button>
-        </div>
+        <UserMenu
+          name={user.name}
+          role="Murid"
+          onChangePassword={onChangePassword}
+          onLogout={onLogout}
+        />
       </header>
       <section className="confirm-card">
         <div className="prayer-icon">
@@ -1094,6 +1091,12 @@ function AdminApp(props) {
                       : "Pengaturan"}
             </h1>
           </div>
+          <UserMenu
+            name="Guru Admin"
+            role="Guru"
+            onChangePassword={onOpenPasswordChange}
+            onLogout={onLogout}
+          />
         </header>
         {notice && <p className="admin-notice">{notice}</p>}
         {view === "dashboard" && (
@@ -1149,6 +1152,53 @@ function NavButton({ active, onClick, icon, children }) {
     </button>
   );
 }
+
+function UserMenu({ name, role, onChangePassword, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const initial = name?.trim().charAt(0).toUpperCase() || "U";
+
+  return (
+    <div className="user-menu">
+      <button
+        className="user-menu-trigger"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+      >
+        <span className="user-avatar">{initial}</span>
+        <span className="user-menu-label">
+          <strong>{name}</strong>
+          <small>{role}</small>
+        </span>
+        <CaretDown size={16} />
+      </button>
+      {open && (
+        <div className="user-menu-dropdown" role="menu">
+          <button
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onChangePassword();
+            }}
+          >
+            Ganti password
+          </button>
+          <button
+            role="menuitem"
+            className="user-menu-logout"
+            onClick={() => {
+              setOpen(false);
+              onLogout();
+            }}
+          >
+            Keluar <SignOut size={17} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Dashboard({ students, classOptions, attendances }) {
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const visibleStudents = students.filter(
