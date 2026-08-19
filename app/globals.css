@@ -101,7 +101,7 @@
 .menstruation-actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:24px}
 .menstruation-actions .large{min-width:190px}
 .settings-signout .danger-button{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:10px;line-height:1;color:#a52d25!important}
-.settings-signout .danger-button svg{display:block!important;width:20px!important;height:20px!important;flex:0 0 20px;color:#a52d25!important;stroke:currentColor;position:relative;top:8px}
+.settings-signout .danger-button svg{display:block!important;width:20px!important;height:20px!important;flex:0 0 20px;color:#a52d25!important;stroke:currentColor;position:static}
 .students-panel .table-actions{grid-template-columns:minmax(0,1fr) 145px auto auto}
 @media(max-width:680px){.students-panel .table-actions{grid-template-columns:minmax(180px,1fr) 125px auto auto;overflow-x:auto}}
 @media(max-width:520px){.students-panel .table-actions{grid-template-columns:1fr;overflow:visible}.menstruation-actions{flex-direction:column}.menstruation-actions .large{width:100%}}
