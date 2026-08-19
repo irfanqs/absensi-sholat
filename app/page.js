@@ -1958,8 +1958,10 @@ function SettingsPage({ onLogout, onChangePassword, prayerSchedule, onSavePrayer
           <span>Anda perlu login kembali untuk mengakses dashboard.</span>
         </div>
         <button className="danger-button" onClick={onLogout}>
-          <SignOut size={19} />
-          Keluar
+          <span className="logout-content">
+            <SignOut size={19} />
+            <span>Keluar</span>
+          </span>
         </button>
       </div>
     </section>
