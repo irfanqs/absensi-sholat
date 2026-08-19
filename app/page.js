@@ -1110,6 +1110,8 @@ function AdminApp(props) {
     onDelete,
     onOpenPasswordChange,
     onCancelAttendance,
+    prayerSchedule,
+    onSavePrayerSchedule,
     onLogout,
   } = props;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
