@@ -7,7 +7,6 @@ import { supabase } from "../lib/supabase";
 import {
   BookOpen,
   CalendarBlank,
-  CaretDown,
   CheckCircle,
   ClipboardText,
   DownloadSimple,
@@ -20,6 +19,7 @@ import {
   QrCode,
   SignOut,
   Trash,
+  UserCircle,
   UsersThree,
   WarningCircle,
 } from "@phosphor-icons/react";
@@ -638,7 +638,6 @@ export default function Home() {
        onSave={saveStudent}
        onDelete={requestDelete}
        onOpenPasswordChange={() => setPasswordModalOpen(true)}
-       onChangePassword={changePassword}
       onImport={(imported) =>
         setStudents((current) => {
           const usernames = new Set(current.map((item) => item.username));
@@ -775,7 +774,6 @@ function SpinWheel({ user, onPass, onLogout, onChangePassword }) {
         <Logo />
         <UserMenu
           name={user.name}
-          role="Murid"
           onChangePassword={onChangePassword}
           onLogout={onLogout}
         />
@@ -919,7 +917,6 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
         <Logo />
         <UserMenu
           name={user.name}
-          role="Murid"
           onChangePassword={onChangePassword}
           onLogout={onLogout}
         />
@@ -1005,7 +1002,6 @@ function AdminApp(props) {
     onSave,
     onDelete,
     onOpenPasswordChange,
-    onChangePassword,
     onLogout,
   } = props;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1091,12 +1087,6 @@ function AdminApp(props) {
                       : "Pengaturan"}
             </h1>
           </div>
-          <UserMenu
-            name="Guru Admin"
-            role="Guru"
-            onChangePassword={onOpenPasswordChange}
-            onLogout={onLogout}
-          />
         </header>
         {notice && <p className="admin-notice">{notice}</p>}
         {view === "dashboard" && (
@@ -1153,9 +1143,8 @@ function NavButton({ active, onClick, icon, children }) {
   );
 }
 
-function UserMenu({ name, role, onChangePassword, onLogout }) {
+function UserMenu({ name, onChangePassword, onLogout }) {
   const [open, setOpen] = useState(false);
-  const initial = name?.trim().charAt(0).toUpperCase() || "U";
 
   return (
     <div className="user-menu">
@@ -1164,16 +1153,13 @@ function UserMenu({ name, role, onChangePassword, onLogout }) {
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
         aria-haspopup="menu"
+        aria-label="Buka menu pengguna"
       >
-        <span className="user-avatar">{initial}</span>
-        <span className="user-menu-label">
-          <strong>{name}</strong>
-          <small>{role}</small>
-        </span>
-        <CaretDown size={16} />
+        <UserCircle size={32} weight="regular" />
       </button>
       {open && (
         <div className="user-menu-dropdown" role="menu">
+          <div className="user-menu-name">{name}</div>
           <button
             role="menuitem"
             onClick={() => {
