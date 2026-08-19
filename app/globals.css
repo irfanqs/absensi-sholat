@@ -155,6 +155,7 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .report-list>.empty{min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center}
 .report-list>.empty svg{color:var(--green);stroke-width:2}
 .report-list>.empty span{max-width:320px}
-.cancel-attendance{border:0;background:transparent;color:#b42318;font-size:11px;font-weight:750;cursor:pointer;padding:3px 0;white-space:nowrap}
+.cancel-attendance{border:0;background:#fff1ef;color:#b42318;border-radius:8px;width:28px;height:28px;display:grid;place-items:center;cursor:pointer;padding:0;white-space:nowrap}
 .cancel-attendance:hover{text-decoration:underline}
+.cancel-attendance svg{display:block}
 .settings-signout .danger-button svg{top:0!important}

@@ -1333,9 +1333,10 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance }) 
                   <time>{item.time}</time>
                   <button
                     className="cancel-attendance"
+                    aria-label={`Batalkan status ${item.studentName}`}
                     onClick={() => onCancelAttendance(item)}
                   >
-                    Batalkan
+                    <X size={16} />
                   </button>
                 </div>
               </div>
@@ -1480,9 +1481,10 @@ function ReportPage({ students, history, onCancelAttendance }) {
                 <b>{item.time}</b>
                 <button
                   className="cancel-attendance"
+                  aria-label={`Batalkan status ${item.studentName}`}
                   onClick={() => onCancelAttendance(item)}
                 >
-                  Batalkan
+                  <X size={16} />
                 </button>
               </time>
             </div>
