@@ -112,6 +112,7 @@
 .admin-notice{margin:-8px 0 18px;padding:11px 14px;border:1px solid #f2c9c3;border-radius:9px;background:#fdf1ef;color:#a52d25;font-size:13px}
 .student-error{max-width:570px;margin:18px auto 0;padding:12px 14px;border:1px solid #f2c9c3;border-radius:9px;background:#fdf1ef;color:#a52d25;line-height:1.5}
 .student-confirm-actions{display:grid;gap:10px;justify-items:center}
+.student-confirm-actions .large{width:min(100%,464px)}
 .status-badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800;line-height:1.2}
 .status-hadir{background:#e6f2ea;color:#176b45}
 .status-haid{background:#fbe4e3;color:#b23a35}
@@ -159,3 +160,14 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .cancel-attendance:hover{text-decoration:underline}
 .cancel-attendance svg{display:block}
 .settings-signout .danger-button svg{top:0!important}
+.prayer-schedule-settings{display:grid;gap:16px;margin-top:28px;padding:22px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.prayer-schedule-settings>div:first-child{display:grid;gap:4px}
+.prayer-schedule-settings span{font-size:13px;color:var(--muted)}
+.schedule-switch{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:700}
+.schedule-switch input{width:18px;height:18px;accent-color:var(--green);margin:0}
+.schedule-times{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.schedule-times label{display:grid;gap:7px;color:var(--muted);font-size:12px;font-weight:750}
+.schedule-times input{min-height:44px;border:1px solid #cddbd2;border-radius:9px;padding:9px 10px;background:#fff;color:var(--ink);font-size:15px;font-weight:400}
+.schedule-times input:disabled{background:#f0f4f1;color:#9aa9a1}
+.schedule-notice{margin:0;color:var(--green);font-size:13px;font-weight:700}
+@media(max-width:680px){.schedule-times{grid-template-columns:1fr}.prayer-schedule-settings .secondary{width:100%}}

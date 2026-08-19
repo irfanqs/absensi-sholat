@@ -240,6 +240,17 @@ function jakartaMinutesNow() {
   return hour * 60 + minute;
 }
 
+const defaultPrayerSchedule = {
+  enabled: true,
+  start: "11:30",
+  end: "15:00",
+};
+
+function timeToMinutes(value) {
+  const [hour, minute] = String(value || "00:00").split(":").map(Number);
+  return hour * 60 + minute;
+}
+
 function Logo() {
   return (
     <div className="brand">
@@ -269,6 +280,7 @@ export default function Home() {
   const [menstruationDecision, setMenstruationDecision] = useState(null);
   const [teacherPassword, setTeacherPassword] = useState("123");
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [prayerSchedule, setPrayerSchedule] = useState(defaultPrayerSchedule);
 
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
@@ -331,6 +343,17 @@ export default function Home() {
       if (storedSession) setUser(JSON.parse(storedSession));
       const storedTeacherPassword = localStorage.getItem("dzuhur-teacher-password");
       if (storedTeacherPassword) setTeacherPassword(storedTeacherPassword);
+      const storedPrayerSchedule = localStorage.getItem("dzuhur-prayer-schedule");
+      if (storedPrayerSchedule) {
+        try {
+          const parsedSchedule = JSON.parse(storedPrayerSchedule);
+          if (parsedSchedule.start && parsedSchedule.end) {
+            setPrayerSchedule({ ...defaultPrayerSchedule, ...parsedSchedule });
+          }
+        } catch {
+          // Use the default schedule when stored settings are invalid.
+        }
+      }
       if (active) setReady(true);
     }
     loadData();
@@ -458,6 +481,11 @@ export default function Home() {
     setUser(updatedUser);
     localStorage.setItem("dzuhur-session", JSON.stringify(updatedUser));
     return "Password murid berhasil diubah.";
+  }
+
+  function savePrayerSchedule(nextSchedule) {
+    setPrayerSchedule(nextSchedule);
+    localStorage.setItem("dzuhur-prayer-schedule", JSON.stringify(nextSchedule));
   }
 
   async function recordAttendance(status) {
@@ -624,6 +652,7 @@ export default function Home() {
           todayKey={todayKey}
           onConfirm={confirmPrayer}
            onHaid={recordMenstruation}
+           prayerSchedule={prayerSchedule}
            attendanceNotice={attendanceNotice}
            onChangePassword={() => setPasswordModalOpen(true)}
           onLogout={() => {
@@ -660,6 +689,8 @@ export default function Home() {
        onSave={saveStudent}
        onDelete={requestDelete}
        onOpenPasswordChange={() => setPasswordModalOpen(true)}
+       prayerSchedule={prayerSchedule}
+       onSavePrayerSchedule={savePrayerSchedule}
        onCancelAttendance={requestCancelAttendance}
       onImport={(imported) =>
         setStudents((current) => {
@@ -918,25 +949,28 @@ function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
   );
 }
 
-function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanceNotice, onLogout, onChangePassword }) {
+function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanceNotice, onLogout, onChangePassword, prayerSchedule }) {
   const [timeNotice, setTimeNotice] = useState(null);
   const [haidConfirmationOpen, setHaidConfirmationOpen] = useState(false);
   const recorded = attendances.find(
     (item) => item.studentId === user.id && item.date === todayKey,
   );
   function validateConfirmationTime() {
+    if (!prayerSchedule.enabled) return true;
     const minutes = jakartaMinutesNow();
-    if (minutes < 690) {
+    const startMinutes = timeToMinutes(prayerSchedule.start);
+    const endMinutes = timeToMinutes(prayerSchedule.end);
+    if (minutes < startMinutes) {
       setTimeNotice({
         title: "Konfirmasi belum dibuka",
-        message: "Konfirmasi sholat Dzuhur tersedia mulai pukul 11.30 WIB.",
+        message: `Konfirmasi sholat Dzuhur tersedia mulai pukul ${prayerSchedule.start.replace(":", ".")} WIB.`,
       });
       return false;
     }
-    if (minutes > 900) {
+    if (minutes > endMinutes) {
       setTimeNotice({
         title: "Waktu konfirmasi sudah terlewat",
-        message: "Harap konfirmasi ke guru bila terjadi kesalahan.",
+        message: `Waktu konfirmasi berakhir pukul ${prayerSchedule.end.replace(":", ".")} WIB. Harap konfirmasi ke guru bila terjadi kesalahan.`,
       });
       return false;
     }
@@ -1199,6 +1233,8 @@ function AdminApp(props) {
           <SettingsPage
             onLogout={onLogout}
             onChangePassword={onOpenPasswordChange}
+            prayerSchedule={prayerSchedule}
+            onSavePrayerSchedule={onSavePrayerSchedule}
           />
         )}
       </main>
@@ -1831,7 +1867,24 @@ function QrPage() {
     </section>
   );
 }
-function SettingsPage({ onLogout, onChangePassword }) {
+function SettingsPage({ onLogout, onChangePassword, prayerSchedule, onSavePrayerSchedule }) {
+  const [draftSchedule, setDraftSchedule] = useState(prayerSchedule);
+  const [scheduleNotice, setScheduleNotice] = useState("");
+
+  useEffect(() => {
+    setDraftSchedule(prayerSchedule);
+  }, [prayerSchedule]);
+
+  function saveSchedule(event) {
+    event.preventDefault();
+    if (timeToMinutes(draftSchedule.start) >= timeToMinutes(draftSchedule.end)) {
+      setScheduleNotice("Jam selesai harus lebih akhir dari jam mulai.");
+      return;
+    }
+    onSavePrayerSchedule(draftSchedule);
+    setScheduleNotice("Jadwal konfirmasi berhasil disimpan.");
+  }
+
   return (
     <section className="simple-panel">
       <ClipboardText size={28} />
@@ -1840,6 +1893,53 @@ function SettingsPage({ onLogout, onChangePassword }) {
         QR permanen memakai alamat web yang sedang dibuka dan mengarah ke
         halaman Dzuhur.
       </p>
+      <form className="prayer-schedule-settings" onSubmit={saveSchedule}>
+        <div>
+          <strong>Jadwal konfirmasi Dzuhur</strong>
+          <span>Atur kapan murid boleh mengirim konfirmasi sholat atau haid.</span>
+        </div>
+        <label className="schedule-switch">
+          <input
+            type="checkbox"
+            checked={draftSchedule.enabled}
+            onChange={(event) =>
+              setDraftSchedule((current) => ({
+                ...current,
+                enabled: event.target.checked,
+              }))
+            }
+          />
+          <span>Aktifkan batas waktu</span>
+        </label>
+        <div className="schedule-times">
+          <label>
+            Mulai
+            <input
+              type="time"
+              value={draftSchedule.start}
+              disabled={!draftSchedule.enabled}
+              onChange={(event) =>
+                setDraftSchedule((current) => ({ ...current, start: event.target.value }))
+              }
+            />
+          </label>
+          <label>
+            Selesai
+            <input
+              type="time"
+              value={draftSchedule.end}
+              disabled={!draftSchedule.enabled}
+              onChange={(event) =>
+                setDraftSchedule((current) => ({ ...current, end: event.target.value }))
+              }
+            />
+          </label>
+        </div>
+        {scheduleNotice && <p className="schedule-notice">{scheduleNotice}</p>}
+        <button className="secondary" type="submit">
+          Simpan jadwal
+        </button>
+      </form>
       <div className="settings-signout">
         <div>
           <strong>Ganti password</strong>
