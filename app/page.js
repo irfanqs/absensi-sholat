@@ -890,26 +890,39 @@ function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
 
 function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanceNotice, onLogout, onChangePassword }) {
   const [timeNotice, setTimeNotice] = useState(null);
+  const [haidConfirmationOpen, setHaidConfirmationOpen] = useState(false);
   const recorded = attendances.find(
     (item) => item.studentId === user.id && item.date === todayKey,
   );
-  function handleConfirmation() {
+  function validateConfirmationTime() {
     const minutes = jakartaMinutesNow();
     if (minutes < 690) {
       setTimeNotice({
         title: "Konfirmasi belum dibuka",
         message: "Konfirmasi sholat Dzuhur tersedia mulai pukul 11.30 WIB.",
       });
-      return;
+      return false;
     }
     if (minutes > 900) {
       setTimeNotice({
         title: "Waktu konfirmasi sudah terlewat",
         message: "Harap konfirmasi ke guru bila terjadi kesalahan.",
       });
-      return;
+      return false;
     }
+    return true;
+  }
+  function handleConfirmation() {
+    if (!validateConfirmationTime()) return;
     onConfirm();
+  }
+  function handleMenstruation() {
+    if (!validateConfirmationTime()) return;
+    setHaidConfirmationOpen(true);
+  }
+  function confirmMenstruation() {
+    setHaidConfirmationOpen(false);
+    onHaid();
   }
   return (
     <main className="student-shell">
@@ -919,7 +932,7 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
             name={user.name}
             onChangePassword={onChangePassword}
             onLogout={onLogout}
-            disabled={Boolean(timeNotice)}
+            disabled={Boolean(timeNotice || haidConfirmationOpen)}
           />
       </header>
       <section className="confirm-card">
@@ -949,7 +962,7 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
                 Saya sudah sholat Dzuhur
               </button>
               {user.gender === "Perempuan" && (
-                <button className="haid-button large" onClick={onHaid}>
+                <button className="haid-button large" onClick={handleMenstruation}>
                   Tidak, saya sedang Haid
                 </button>
               )}
@@ -977,6 +990,36 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
             <button className="primary" onClick={() => setTimeNotice(null)}>
               Mengerti
             </button>
+          </section>
+        </div>
+      )}
+      {haidConfirmationOpen && (
+        <div
+          className="modal-backdrop"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="haid-confirmation-title"
+        >
+          <section className="student-modal time-notice">
+            <WarningCircle size={32} weight="fill" />
+            <div>
+              <h2 id="haid-confirmation-title">Konfirmasi status haid</h2>
+            </div>
+            <p>
+              Pastikan Anda benar-benar sedang haid. Status ini akan dicatat
+              sebagai Haid dan tidak dapat diubah hari ini.
+            </p>
+            <div className="modal-actions">
+              <button
+                className="secondary"
+                onClick={() => setHaidConfirmationOpen(false)}
+              >
+                Batal
+              </button>
+              <button className="haid-button" onClick={confirmMenstruation}>
+                Ya, saya sedang haid
+              </button>
+            </div>
           </section>
         </div>
       )}
