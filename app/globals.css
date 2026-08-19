@@ -160,6 +160,7 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .cancel-attendance:hover{text-decoration:underline}
 .cancel-attendance svg{display:block}
 .settings-signout .danger-button svg{top:0!important}
+@media(min-width:681px){.settings-signout .danger-button{min-width:206px;min-height:44px}.settings-signout .danger-button svg{position:static!important;top:auto!important;transform:none!important}}
 .prayer-schedule-settings{display:grid;gap:16px;margin-top:28px;padding:22px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .prayer-schedule-settings>div:first-child{display:grid;gap:4px}
 .prayer-schedule-settings span{font-size:13px;color:var(--muted)}
