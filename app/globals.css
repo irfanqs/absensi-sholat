@@ -129,6 +129,12 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .report-export:hover{background:#105b38;border-color:#105b38;color:#fff}
 @media(max-width:680px){.report-export{grid-column:1/-1;width:100%}}
 .report-controls select{-webkit-appearance:none;appearance:none;min-height:46px;padding-right:36px!important;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2365746d%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E");background-repeat:no-repeat;background-position:calc(100% - 10px) center;background-size:16px}
+.attendance-panel{min-height:0}
+.attendance-panel .panel-title{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:18px}
+.attendance-panel .panel-title>div{min-width:0}
+.attendance-panel .panel-title select{min-width:170px}
+.attendance-panel .empty{min-height:230px;display:grid;place-items:center;align-content:center;gap:14px;text-align:center}
+@media(max-width:680px){.attendance-panel .panel-title{grid-template-columns:minmax(0,1fr) auto;gap:12px}.attendance-panel .panel-title>div{grid-column:1/-1}.attendance-panel .panel-title>span{grid-column:1/-1;justify-self:start}.attendance-panel .panel-title select{min-width:0;width:100%}.attendance-panel .empty{min-height:180px}}
 .student-header-actions{display:flex;align-items:center;gap:14px}
 .user-menu{position:relative;z-index:10}
 .user-menu-trigger{display:grid;place-items:center;border:0;background:transparent;color:var(--green);border-radius:12px;padding:4px;cursor:pointer}
@@ -140,3 +146,6 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .user-menu-dropdown .user-menu-logout{color:#b42318}
 .haid-button{border:1px solid #efb0aa;background:#fff1ef;color:#b42318;border-radius:11px;padding:13px 18px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .haid-button:hover{background:#ffe3df}
+.report-export{white-space:nowrap}
+@media(max-width:680px){.report-controls{align-items:stretch}.report-controls label{align-self:stretch;grid-template-rows:auto 1fr;gap:8px}.report-controls label input,.report-controls label select{height:68px;min-height:68px}.report-controls .report-export{grid-column:1/-1;width:100%;min-height:58px}}
+.settings-signout .danger-button svg{top:0!important}
