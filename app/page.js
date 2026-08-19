@@ -440,6 +440,7 @@ export default function Home() {
     const form = new FormData(event.currentTarget);
     const username = form.get("username").trim();
     const password = form.get("password");
+    setNotice("");
     if (username === "guru" && password === teacherPassword) {
       const session = { name: "Guru Admin", role: "admin" };
       setUser(session);
@@ -1938,7 +1939,7 @@ function SettingsPage({ onLogout, onChangePassword, prayerSchedule, onSavePrayer
           </label>
         </div>
         {scheduleNotice && <p className="schedule-notice">{scheduleNotice}</p>}
-        <button className="secondary" type="submit">
+        <button className="primary" type="submit">
           Simpan jadwal
         </button>
       </form>
