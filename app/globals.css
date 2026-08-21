@@ -213,3 +213,6 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 @media(max-width:680px){.schedule-times{grid-template-columns:1fr}.prayer-schedule-settings .secondary{width:100%}}
 .report-controls{min-width:0}
 @media(max-width:680px){.report-controls{grid-template-columns:1fr}.report-controls label,.report-controls .period-toggle,.report-controls .report-export{grid-column:1/-1}}
+.mark-haid-button{border-color:#efb0aa;background:#fff1ef;color:#b42318}
+.mark-haid-button:hover{background:#ffe3df}
+.report-list .status-badge{vertical-align:middle}

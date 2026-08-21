@@ -570,6 +570,41 @@ export default function Home() {
     setAttendances((current) => [record, ...current]);
   }
 
+  async function markStudentMenstruation(student) {
+    if (student.gender !== "Perempuan") return;
+    if (attendances.some((item) => item.studentId === student.id && item.date === todayKey)) return;
+    const record = {
+      id: createId(),
+      studentId: student.id,
+      studentName: student.name,
+      className: student.className,
+      date: todayKey,
+      time: new Intl.DateTimeFormat("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Jakarta",
+      }).format(new Date()),
+      status: "Haid",
+    };
+    if (supabase) {
+      const { error } = await supabase.from("attendances").insert({
+        id: String(record.id),
+        student_id: String(record.studentId),
+        student_name: record.studentName,
+        class_name: record.className,
+        date: record.date,
+        time: record.time,
+        status: record.status,
+      });
+      if (error) {
+        setNotice(`Gagal menandai haid: ${error.message}`);
+        return;
+      }
+    }
+    setNotice("");
+    setAttendances((current) => [record, ...current]);
+  }
+
   async function saveStudent(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -728,6 +763,7 @@ export default function Home() {
        onSavePrayerSchedule={savePrayerSchedule}
        onCancelAttendance={requestCancelAttendance}
        onMarkStudentPresent={markStudentPresent}
+       onMarkStudentMenstruation={markStudentMenstruation}
       onImport={(imported) =>
         setStudents((current) => {
           const usernames = new Set(current.map((item) => item.username));
@@ -1147,6 +1183,7 @@ function AdminApp(props) {
     onOpenPasswordChange,
     onCancelAttendance,
     onMarkStudentPresent,
+    onMarkStudentMenstruation,
     prayerSchedule,
     onSavePrayerSchedule,
     onLogout,
@@ -1248,6 +1285,7 @@ function AdminApp(props) {
             totalConfirmed={attendances.length}
             onCancelAttendance={onCancelAttendance}
             onMarkStudentPresent={onMarkStudentPresent}
+            onMarkStudentMenstruation={onMarkStudentMenstruation}
           />
         )}
         {view === "reports" && (
@@ -1346,7 +1384,7 @@ function UserMenu({ name, onChangePassword, onLogout, disabled = false }) {
   );
 }
 
-function Dashboard({ students, classOptions, attendances, totalStudents, totalConfirmed, onCancelAttendance, onMarkStudentPresent }) {
+function Dashboard({ students, classOptions, attendances, totalStudents, totalConfirmed, onCancelAttendance, onMarkStudentPresent, onMarkStudentMenstruation }) {
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const [searchQuery, setSearchQuery] = useState("");
   const [dashboardFilter, setDashboardFilter] = useState("all");
@@ -1472,6 +1510,14 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
                 >
                   Tandai hadir
                 </button>
+                {student.gender === "Perempuan" && (
+                  <button
+                    className="mark-present-button mark-haid-button"
+                    onClick={() => onMarkStudentMenstruation(student)}
+                  >
+                    Tandai haid
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -1646,7 +1692,12 @@ function ReportPage({ students, history, onCancelAttendance }) {
               <span className="person-initial attendance-number">{index + 1}</span>
                 <div>
                   <strong>{item.studentName}</strong>
-                  <span>Kelas {item.className} · {item.status || "Hadir"}</span>
+                   <span>
+                     Kelas {item.className} ·{" "}
+                     <b className={item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
+                       {item.status || "Hadir"}
+                     </b>
+                   </span>
                 </div>
               <time>
                 {new Intl.DateTimeFormat("id-ID", {
