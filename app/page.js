@@ -1357,6 +1357,11 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
   const confirmedCount = visibleAttendances.length;
   const haidCount = visibleAttendances.filter((item) => item.status === "Haid").length;
   const absent = visibleStudents.length - confirmedCount;
+  const overallConfirmedCount = attendances.length;
+  const confirmedPercentage = students.length
+    ? Math.round((overallConfirmedCount / students.length) * 100)
+    : 0;
+  const pendingPercentage = 100 - confirmedPercentage;
   const absentStudents = visibleStudents.filter(
     (student) => !visibleAttendances.some((item) => item.studentId === student.id),
   );
@@ -1372,6 +1377,25 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
   );
   return (
     <>
+      <section className="dashboard-insight">
+        <div
+          className="attendance-pie"
+          style={{
+            background: `conic-gradient(var(--green) 0 ${confirmedPercentage}%, #f7e8cb ${confirmedPercentage}% 100%)`,
+          }}
+        >
+          <div>
+            <strong>{confirmedPercentage}%</strong>
+            <span>terkonfirmasi</span>
+          </div>
+        </div>
+        <div className="attendance-legend">
+          <p className="eyebrow">PERSENTASE HARI INI</p>
+          <h2>Progress konfirmasi</h2>
+          <span><i className="legend-dot legend-present" /> Sudah konfirmasi <b>{confirmedPercentage}%</b></span>
+          <span><i className="legend-dot legend-pending" /> Belum konfirmasi <b>{pendingPercentage}%</b></span>
+        </div>
+      </section>
       <section className="metric-grid">
         <Metric
           label="Sudah hadir"
@@ -1398,14 +1422,24 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
           onClick={() => setDashboardFilter("all")}
         />
       </section>
-      <label className="dashboard-search dashboard-search-row">
-        <MagnifyingGlass size={19} />
-        <input
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder={dashboardFilter === "pending" ? "Cari murid yang belum hadir..." : "Cari nama murid..."}
-        />
-      </label>
+      <div className="dashboard-search-row">
+        <label className="dashboard-search">
+          <MagnifyingGlass size={19} />
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder={dashboardFilter === "pending" ? "Cari murid yang belum hadir..." : "Cari nama murid..."}
+          />
+        </label>
+        <select
+          className="dashboard-class-filter"
+          value={selectedClass}
+          onChange={(event) => setSelectedClass(event.target.value)}
+        >
+          <option>Semua kelas</option>
+          {classOptions.map((className) => <option key={className}>{className}</option>)}
+        </select>
+      </div>
       {(dashboardFilter === "pending" || dashboardFilter === "all") && absentStudents.length > 0 && (
         <section className="unconfirmed-panel">
           <div className="panel-title">
@@ -1445,10 +1479,6 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
             <h2>Absensi terbaru</h2>
             <p>Konfirmasi yang masuk hari ini.</p>
           </div>
-          <select value={selectedClass} onChange={(event) => setSelectedClass(event.target.value)}>
-            <option>Semua kelas</option>
-            {classOptions.map((className) => <option key={className}>{className}</option>)}
-          </select>
           <span>
             {confirmedCount} murid terkonfirmasi{haidCount ? ` · ${haidCount} haid` : ""}
           </span>
