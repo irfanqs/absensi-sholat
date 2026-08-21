@@ -1244,6 +1244,8 @@ function AdminApp(props) {
             students={students}
             classOptions={classOptions}
             attendances={attendances}
+            totalStudents={students.length}
+            totalConfirmed={attendances.length}
             onCancelAttendance={onCancelAttendance}
             onMarkStudentPresent={onMarkStudentPresent}
           />
@@ -1344,7 +1346,7 @@ function UserMenu({ name, onChangePassword, onLogout, disabled = false }) {
   );
 }
 
-function Dashboard({ students, classOptions, attendances, onCancelAttendance, onMarkStudentPresent }) {
+function Dashboard({ students, classOptions, attendances, totalStudents, totalConfirmed, onCancelAttendance, onMarkStudentPresent }) {
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const [searchQuery, setSearchQuery] = useState("");
   const [dashboardFilter, setDashboardFilter] = useState("all");
@@ -1357,9 +1359,8 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
   const confirmedCount = visibleAttendances.length;
   const haidCount = visibleAttendances.filter((item) => item.status === "Haid").length;
   const absent = visibleStudents.length - confirmedCount;
-  const overallConfirmedCount = attendances.length;
-  const confirmedPercentage = students.length
-    ? Math.round((overallConfirmedCount / students.length) * 100)
+  const confirmedPercentage = totalStudents
+    ? Math.round((totalConfirmed / totalStudents) * 100)
     : 0;
   const pendingPercentage = 100 - confirmedPercentage;
   const absentStudents = visibleStudents.filter(
@@ -1428,7 +1429,13 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
           <input
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder={dashboardFilter === "pending" ? "Cari murid yang belum hadir..." : "Cari nama murid..."}
+            placeholder={
+              dashboardFilter === "confirmed"
+                ? "Cari nama murid yang sudah hadir..."
+                : dashboardFilter === "pending"
+                  ? "Cari murid yang belum hadir..."
+                  : "Cari nama murid..."
+            }
           />
         </label>
         <select
