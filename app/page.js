@@ -536,6 +536,39 @@ export default function Home() {
     return recordAttendance("Haid");
   }
 
+  async function markStudentPresent(student) {
+    if (attendances.some((item) => item.studentId === student.id && item.date === todayKey)) return;
+    const record = {
+      id: createId(),
+      studentId: student.id,
+      studentName: student.name,
+      className: student.className,
+      date: todayKey,
+      time: new Intl.DateTimeFormat("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Jakarta",
+      }).format(new Date()),
+      status: "Hadir",
+    };
+    if (supabase) {
+      const { error } = await supabase.from("attendances").insert({
+        id: String(record.id),
+        student_id: String(record.studentId),
+        student_name: record.studentName,
+        class_name: record.className,
+        date: record.date,
+        time: record.time,
+        status: record.status,
+      });
+      if (error) {
+        setNotice(`Gagal menandai kehadiran: ${error.message}`);
+        return;
+      }
+    }
+    setAttendances((current) => [record, ...current]);
+  }
+
   async function saveStudent(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -693,6 +726,7 @@ export default function Home() {
        prayerSchedule={prayerSchedule}
        onSavePrayerSchedule={savePrayerSchedule}
        onCancelAttendance={requestCancelAttendance}
+       onMarkStudentPresent={markStudentPresent}
       onImport={(imported) =>
         setStudents((current) => {
           const usernames = new Set(current.map((item) => item.username));
@@ -1111,6 +1145,7 @@ function AdminApp(props) {
     onDelete,
     onOpenPasswordChange,
     onCancelAttendance,
+    onMarkStudentPresent,
     prayerSchedule,
     onSavePrayerSchedule,
     onLogout,
@@ -1209,6 +1244,7 @@ function AdminApp(props) {
             classOptions={classOptions}
             attendances={attendances}
             onCancelAttendance={onCancelAttendance}
+            onMarkStudentPresent={onMarkStudentPresent}
           />
         )}
         {view === "reports" && (
@@ -1307,7 +1343,7 @@ function UserMenu({ name, onChangePassword, onLogout, disabled = false }) {
   );
 }
 
-function Dashboard({ students, classOptions, attendances, onCancelAttendance }) {
+function Dashboard({ students, classOptions, attendances, onCancelAttendance, onMarkStudentPresent }) {
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const visibleStudents = students.filter(
     (student) => selectedClass === "Semua kelas" || student.className === selectedClass,
@@ -1318,19 +1354,26 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance }) 
   const hadirCount = visibleAttendances.filter((item) => item.status !== "Haid").length;
   const haidCount = visibleAttendances.filter((item) => item.status === "Haid").length;
   const absent = visibleStudents.length - visibleAttendances.length;
+  const sholatPercentage = visibleStudents.length
+    ? Math.round((hadirCount / visibleStudents.length) * 100)
+    : 0;
+  const notSholatPercentage = 100 - sholatPercentage;
+  const absentStudents = visibleStudents.filter(
+    (student) => !visibleAttendances.some((item) => item.studentId === student.id),
+  );
   return (
     <>
       <section className="metric-grid">
         <Metric
           label="Sudah hadir"
           value={hadirCount}
-          detail="Murid terkonfirmasi"
+          detail={`${sholatPercentage}% murid sudah sholat`}
           tone="green"
         />
         <Metric
           label="Belum hadir"
           value={absent}
-          detail="Perlu ditinjau"
+          detail={`${notSholatPercentage}% belum sholat`}
           tone="sand"
         />
         <Metric
@@ -1340,6 +1383,36 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance }) 
           tone="plain"
         />
       </section>
+      {absentStudents.length > 0 && (
+        <section className="unconfirmed-panel">
+          <div className="panel-title">
+            <div>
+              <h2>Belum konfirmasi</h2>
+              <p>Guru dapat menandai murid yang sudah hadir secara langsung.</p>
+            </div>
+            <span>{absentStudents.length} murid</span>
+          </div>
+          <div className="unconfirmed-list">
+            {absentStudents.map((student) => (
+              <div key={student.id}>
+                <span className="person-initial attendance-number">
+                  {student.name.charAt(0)}
+                </span>
+                <div>
+                  <strong>{student.name}</strong>
+                  <span>Kelas {student.className}</span>
+                </div>
+                <button
+                  className="mark-present-button"
+                  onClick={() => onMarkStudentPresent(student)}
+                >
+                  Tandai hadir
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       <section className="attendance-panel">
         <div className="panel-title">
           <div>

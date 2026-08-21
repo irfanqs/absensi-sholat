@@ -162,6 +162,18 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .cancel-attendance{border:0;background:#fff1ef;color:#b42318;border-radius:8px;width:28px;height:28px;display:grid;place-items:center;cursor:pointer;padding:0;white-space:nowrap}
 .cancel-attendance:hover{text-decoration:underline}
 .cancel-attendance svg{display:block}
+.unconfirmed-panel{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:18px}
+.unconfirmed-panel .panel-title{padding:20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:18px}
+.unconfirmed-panel .panel-title h2{margin:0 0 4px}
+.unconfirmed-panel .panel-title p{margin:0;color:var(--muted);font-size:13px}
+.unconfirmed-panel .panel-title>span{background:#f7f2e7;color:var(--ink);border-radius:999px;padding:8px 12px;font-size:12px;font-weight:750;white-space:nowrap}
+.unconfirmed-list>div{display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:12px;padding:12px 20px;border-top:1px solid #edf1ee}
+.unconfirmed-list>div:first-child{border-top:0}
+.unconfirmed-list>div>div{display:grid;gap:3px}
+.unconfirmed-list>div>div span{font-size:12px;color:var(--muted)}
+.mark-present-button{border:1px solid #b9d9c5;background:#f2faf4;color:var(--green-deep);border-radius:9px;padding:8px 11px;font-size:12px;font-weight:750;cursor:pointer;white-space:nowrap}
+.mark-present-button:hover{background:#e2f3e7}
+@media(max-width:680px){.unconfirmed-panel{border-radius:13px}.unconfirmed-panel .panel-title{padding:16px;align-items:flex-start}.unconfirmed-list>div{grid-template-columns:32px 1fr;gap:9px;padding:12px 14px}.mark-present-button{grid-column:2;justify-self:start}}
 .settings-signout .danger-button svg{top:0!important}
 @media(min-width:681px){.settings-signout .danger-button{min-height:44px}.settings-signout .danger-button svg{position:static!important;top:auto!important;transform:none!important}}
 .prayer-schedule-settings{display:grid;gap:16px;margin-top:28px;padding:22px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
