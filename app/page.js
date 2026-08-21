@@ -13,6 +13,7 @@ import {
   Gear,
   House,
   List,
+  MagnifyingGlass,
   PencilSimple,
   X,
   Plus,
@@ -1345,35 +1346,80 @@ function UserMenu({ name, onChangePassword, onLogout, disabled = false }) {
 
 function Dashboard({ students, classOptions, attendances, onCancelAttendance, onMarkStudentPresent }) {
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("Semua status");
   const visibleStudents = students.filter(
     (student) => selectedClass === "Semua kelas" || student.className === selectedClass,
   );
   const visibleAttendances = attendances.filter(
     (item) => selectedClass === "Semua kelas" || item.className === selectedClass,
   );
-  const hadirCount = visibleAttendances.filter((item) => item.status !== "Haid").length;
+  const confirmedCount = visibleAttendances.length;
   const haidCount = visibleAttendances.filter((item) => item.status === "Haid").length;
-  const absent = visibleStudents.length - visibleAttendances.length;
+  const absent = visibleStudents.length - confirmedCount;
   const sholatPercentage = visibleStudents.length
-    ? Math.round((hadirCount / visibleStudents.length) * 100)
+    ? Math.round((confirmedCount / visibleStudents.length) * 100)
     : 0;
-  const notSholatPercentage = 100 - sholatPercentage;
+  const notConfirmedPercentage = 100 - sholatPercentage;
   const absentStudents = visibleStudents.filter(
     (student) => !visibleAttendances.some((item) => item.studentId === student.id),
   );
+  const filteredAbsentStudents = absentStudents.filter((student) =>
+    `${student.name} ${student.username} ${student.className}`
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase()),
+  );
   return (
     <>
+      <section className="dashboard-insight">
+        <div
+          className="attendance-pie"
+          style={{
+            background: `conic-gradient(var(--green) 0 ${sholatPercentage}%, #f7e8cb ${sholatPercentage}% 100%)`,
+          }}
+        >
+          <div>
+            <strong>{sholatPercentage}%</strong>
+            <span>terkonfirmasi</span>
+          </div>
+        </div>
+        <div className="attendance-legend">
+          <p className="eyebrow">PERSENTASE HARI INI</p>
+          <h2>Progress konfirmasi</h2>
+          <span><i className="legend-dot legend-present" /> Sudah konfirmasi <b>{sholatPercentage}%</b></span>
+          <span><i className="legend-dot legend-pending" /> Belum konfirmasi <b>{notConfirmedPercentage}%</b></span>
+        </div>
+        <div className="dashboard-filter-tools">
+          <label className="dashboard-search">
+            <MagnifyingGlass size={19} />
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Cari nama murid..."
+            />
+          </label>
+          <select
+            className="dashboard-status-filter"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option>Semua status</option>
+            <option>Sudah konfirmasi</option>
+            <option>Belum konfirmasi</option>
+          </select>
+        </div>
+      </section>
       <section className="metric-grid">
         <Metric
           label="Sudah hadir"
-          value={hadirCount}
-          detail={`${sholatPercentage}% murid sudah sholat`}
+          value={confirmedCount}
+          detail="Murid terkonfirmasi"
           tone="green"
         />
         <Metric
           label="Belum hadir"
           value={absent}
-          detail={`${notSholatPercentage}% belum sholat`}
+          detail="Perlu ditinjau"
           tone="sand"
         />
         <Metric
@@ -1383,7 +1429,7 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
           tone="plain"
         />
       </section>
-      {absentStudents.length > 0 && (
+      {statusFilter !== "Sudah konfirmasi" && absentStudents.length > 0 && (
         <section className="unconfirmed-panel">
           <div className="panel-title">
             <div>
@@ -1393,10 +1439,10 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
             <span>{absentStudents.length} murid</span>
           </div>
           <div className="unconfirmed-list">
-            {absentStudents.map((student) => (
+            {filteredAbsentStudents.map((student, index) => (
               <div key={student.id}>
                 <span className="person-initial attendance-number">
-                  {student.name.charAt(0)}
+                  {index + 1}
                 </span>
                 <div>
                   <strong>{student.name}</strong>
@@ -1411,9 +1457,12 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
               </div>
             ))}
           </div>
+          {!filteredAbsentStudents.length && (
+            <div className="empty">Murid tidak ditemukan.</div>
+          )}
         </section>
       )}
-      <section className="attendance-panel">
+      {statusFilter !== "Belum konfirmasi" && <section className="attendance-panel">
         <div className="panel-title">
           <div>
             <h2>Absensi terbaru</h2>
@@ -1424,7 +1473,7 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
             {classOptions.map((className) => <option key={className}>{className}</option>)}
           </select>
           <span>
-            {hadirCount} murid hadir{haidCount ? ` · ${haidCount} haid` : ""}
+            {confirmedCount} murid terkonfirmasi{haidCount ? ` · ${haidCount} haid` : ""}
           </span>
         </div>
         {visibleAttendances.length ? (
@@ -1460,7 +1509,7 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
             Belum ada konfirmasi Dzuhur hari ini.
           </div>
         )}
-      </section>
+      </section>}
     </>
   );
 }
