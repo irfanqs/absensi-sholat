@@ -1347,7 +1347,7 @@ function UserMenu({ name, onChangePassword, onLogout, disabled = false }) {
 function Dashboard({ students, classOptions, attendances, onCancelAttendance, onMarkStudentPresent }) {
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("Semua status");
+  const [dashboardFilter, setDashboardFilter] = useState("all");
   const visibleStudents = students.filter(
     (student) => selectedClass === "Semua kelas" || student.className === selectedClass,
   );
@@ -1357,10 +1357,6 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
   const confirmedCount = visibleAttendances.length;
   const haidCount = visibleAttendances.filter((item) => item.status === "Haid").length;
   const absent = visibleStudents.length - confirmedCount;
-  const sholatPercentage = visibleStudents.length
-    ? Math.round((confirmedCount / visibleStudents.length) * 100)
-    : 0;
-  const notConfirmedPercentage = 100 - sholatPercentage;
   const absentStudents = visibleStudents.filter(
     (student) => !visibleAttendances.some((item) => item.studentId === student.id),
   );
@@ -1369,67 +1365,48 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
       .toLowerCase()
       .includes(searchQuery.toLowerCase()),
   );
+  const filteredAttendances = visibleAttendances.filter((item) =>
+    `${item.studentName} ${item.className} ${item.status || "Hadir"}`
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase()),
+  );
   return (
     <>
-      <section className="dashboard-insight">
-        <div
-          className="attendance-pie"
-          style={{
-            background: `conic-gradient(var(--green) 0 ${sholatPercentage}%, #f7e8cb ${sholatPercentage}% 100%)`,
-          }}
-        >
-          <div>
-            <strong>{sholatPercentage}%</strong>
-            <span>terkonfirmasi</span>
-          </div>
-        </div>
-        <div className="attendance-legend">
-          <p className="eyebrow">PERSENTASE HARI INI</p>
-          <h2>Progress konfirmasi</h2>
-          <span><i className="legend-dot legend-present" /> Sudah konfirmasi <b>{sholatPercentage}%</b></span>
-          <span><i className="legend-dot legend-pending" /> Belum konfirmasi <b>{notConfirmedPercentage}%</b></span>
-        </div>
-        <div className="dashboard-filter-tools">
-          <label className="dashboard-search">
-            <MagnifyingGlass size={19} />
-            <input
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Cari nama murid..."
-            />
-          </label>
-          <select
-            className="dashboard-status-filter"
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option>Semua status</option>
-            <option>Sudah konfirmasi</option>
-            <option>Belum konfirmasi</option>
-          </select>
-        </div>
-      </section>
       <section className="metric-grid">
         <Metric
           label="Sudah hadir"
           value={confirmedCount}
           detail="Murid terkonfirmasi"
           tone="green"
+          active={dashboardFilter === "confirmed"}
+          onClick={() => setDashboardFilter("confirmed")}
         />
         <Metric
           label="Belum hadir"
           value={absent}
           detail="Perlu ditinjau"
           tone="sand"
+          active={dashboardFilter === "pending"}
+          onClick={() => setDashboardFilter("pending")}
         />
         <Metric
           label="Total murid"
           value={visibleStudents.length}
           detail="Dari 36 kelas"
           tone="plain"
+          active={dashboardFilter === "all"}
+          onClick={() => setDashboardFilter("all")}
         />
       </section>
-      {statusFilter !== "Sudah konfirmasi" && absentStudents.length > 0 && (
+      <label className="dashboard-search dashboard-search-row">
+        <MagnifyingGlass size={19} />
+        <input
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder={dashboardFilter === "pending" ? "Cari murid yang belum hadir..." : "Cari nama murid..."}
+        />
+      </label>
+      {(dashboardFilter === "pending" || dashboardFilter === "all") && absentStudents.length > 0 && (
         <section className="unconfirmed-panel">
           <div className="panel-title">
             <div>
@@ -1462,7 +1439,7 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
           )}
         </section>
       )}
-      {statusFilter !== "Belum konfirmasi" && <section className="attendance-panel">
+      {(dashboardFilter === "confirmed" || dashboardFilter === "all") && <section className="attendance-panel">
         <div className="panel-title">
           <div>
             <h2>Absensi terbaru</h2>
@@ -1476,9 +1453,9 @@ function Dashboard({ students, classOptions, attendances, onCancelAttendance, on
             {confirmedCount} murid terkonfirmasi{haidCount ? ` · ${haidCount} haid` : ""}
           </span>
         </div>
-        {visibleAttendances.length ? (
+        {filteredAttendances.length ? (
           <div className="attendance-list">
-            {visibleAttendances.map((item, index) => (
+            {filteredAttendances.map((item, index) => (
               <div key={item.id}>
                 <span className="person-initial attendance-number">{index + 1}</span>
                 <div className="attendance-person">
@@ -1660,12 +1637,28 @@ function ReportPage({ students, history, onCancelAttendance }) {
     </section>
   );
 }
-function Metric({ label, value, detail, tone }) {
-  return (
-    <article className={`metric ${tone}`}>
+function Metric({ label, value, detail, tone, active, onClick }) {
+  const content = (
+    <>
       <p>{label}</p>
       <strong>{value}</strong>
       <span>{detail}</span>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        className={`metric ${tone} metric-button${active ? " metric-active" : ""}`}
+        onClick={onClick}
+        type="button"
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <article className={`metric ${tone}`}>
+      {content}
     </article>
   );
 }
