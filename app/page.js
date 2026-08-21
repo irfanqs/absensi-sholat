@@ -1360,7 +1360,7 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
   const haidCount = visibleAttendances.filter((item) => item.status === "Haid").length;
   const absent = visibleStudents.length - confirmedCount;
   const confirmedPercentage = totalStudents
-    ? Math.round((totalConfirmed / totalStudents) * 100)
+    ? Number(((totalConfirmed / totalStudents) * 100).toFixed(1))
     : 0;
   const pendingPercentage = 100 - confirmedPercentage;
   const absentStudents = visibleStudents.filter(
