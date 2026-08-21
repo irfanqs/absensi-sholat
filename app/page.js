@@ -1504,20 +1504,22 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
                   <strong>{student.name}</strong>
                   <span>Kelas {student.className}</span>
                 </div>
-                <button
-                  className="mark-present-button"
-                  onClick={() => onMarkStudentPresent(student)}
-                >
-                  Tandai hadir
-                </button>
-                {student.gender === "Perempuan" && (
+                <div className="unconfirmed-actions">
                   <button
-                    className="mark-present-button mark-haid-button"
-                    onClick={() => onMarkStudentMenstruation(student)}
+                    className="mark-present-button"
+                    onClick={() => onMarkStudentPresent(student)}
                   >
-                    Tandai haid
+                    Tandai hadir
                   </button>
-                )}
+                  {student.gender === "Perempuan" && (
+                    <button
+                      className="mark-present-button mark-haid-button"
+                      onClick={() => onMarkStudentMenstruation(student)}
+                    >
+                      Tandai haid
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>

@@ -217,3 +217,8 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .mark-haid-button:hover{background:#ffe3df}
 .report-list .status-badge{vertical-align:middle}
 @media(min-width:681px){.unconfirmed-list>div{grid-template-columns:34px minmax(0,1fr) auto auto}}
+@media(max-width:680px){.unconfirmed-list>div{grid-template-columns:32px minmax(0,1fr) auto auto;gap:6px}.unconfirmed-list .mark-present-button{grid-column:auto;justify-self:stretch;padding:8px 7px;font-size:11px}}
+.unconfirmed-actions{display:flex!important;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+@media(min-width:681px){.unconfirmed-list>div{grid-template-columns:34px minmax(0,1fr) auto}}
+@media(max-width:680px){.unconfirmed-list>div{grid-template-columns:32px minmax(0,1fr);gap:9px}.unconfirmed-actions{grid-column:2;justify-content:flex-start}.unconfirmed-list .mark-present-button{padding:8px 10px;font-size:12px}}
+@media(max-width:680px){.unconfirmed-actions{width:100%}.unconfirmed-actions .mark-present-button{flex:1}}
