@@ -211,3 +211,5 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .schedule-times input:disabled{background:#f0f4f1;color:#9aa9a1}
 .schedule-notice{margin:0;color:var(--green);font-size:13px;font-weight:700}
 @media(max-width:680px){.schedule-times{grid-template-columns:1fr}.prayer-schedule-settings .secondary{width:100%}}
+.report-controls{min-width:0}
+@media(max-width:680px){.report-controls{grid-template-columns:1fr}.report-controls label,.report-controls .period-toggle,.report-controls .report-export{grid-column:1/-1}}
