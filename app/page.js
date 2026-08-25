@@ -5,6 +5,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
 import {
+  ArrowLeft,
   BookOpen,
   CalendarBlank,
   CheckCircle,
@@ -1212,8 +1213,12 @@ function StudentSettingsPage({ user, attendances, todayKey, onBack, onChangePass
         />
       </header>
       <section className="student-settings-card">
-        <button className="text-button student-settings-back" onClick={onBack}>
-          Kembali
+        <button
+          className="student-settings-back"
+          onClick={onBack}
+          aria-label="Kembali ke absensi"
+        >
+          <ArrowLeft size={22} />
         </button>
         <p className="eyebrow">PENGATURAN SISWA</p>
         <h1>Kalender absensi</h1>
@@ -1477,7 +1482,7 @@ function UserMenu({ name, onChangePassword, onOpenSettings, onLogout, disabled =
                 onOpenSettings();
               }}
             >
-              Pengaturan
+              Kalender absensi
             </button>
           )}
           <button

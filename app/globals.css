@@ -222,6 +222,8 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 @media(min-width:681px){.unconfirmed-list>div{grid-template-columns:34px minmax(0,1fr) auto}}
 @media(max-width:680px){.unconfirmed-list>div{grid-template-columns:32px minmax(0,1fr);gap:9px}.unconfirmed-actions{grid-column:2;justify-content:flex-start}.unconfirmed-list .mark-present-button{padding:8px 10px;font-size:12px}}
 @media(max-width:680px){.unconfirmed-actions{width:100%}.unconfirmed-actions .mark-present-button{flex:1}}
+.student-settings-back{display:grid;place-items:center;width:40px;height:40px;margin-bottom:24px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--green-deep);cursor:pointer}
+.student-settings-back:hover{background:var(--mint)}
 .student-settings-shell{padding-bottom:40px}
 .student-settings-card{width:min(100%,720px);margin:clamp(40px,8vh,90px) auto 0;padding:32px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 42px rgba(18,61,42,.08)}
 .student-settings-back{margin-bottom:24px}
