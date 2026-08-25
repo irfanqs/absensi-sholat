@@ -222,3 +222,24 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 @media(min-width:681px){.unconfirmed-list>div{grid-template-columns:34px minmax(0,1fr) auto}}
 @media(max-width:680px){.unconfirmed-list>div{grid-template-columns:32px minmax(0,1fr);gap:9px}.unconfirmed-actions{grid-column:2;justify-content:flex-start}.unconfirmed-list .mark-present-button{padding:8px 10px;font-size:12px}}
 @media(max-width:680px){.unconfirmed-actions{width:100%}.unconfirmed-actions .mark-present-button{flex:1}}
+.student-settings-shell{padding-bottom:40px}
+.student-settings-card{width:min(100%,720px);margin:clamp(40px,8vh,90px) auto 0;padding:32px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 42px rgba(18,61,42,.08)}
+.student-settings-back{margin-bottom:24px}
+.student-settings-card h1{margin:0 0 8px;font-size:clamp(28px,4vw,40px);letter-spacing:-.04em}
+.student-settings-card>.muted{margin:0}
+.student-calendar{margin-top:28px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.student-calendar-head{display:grid;grid-template-columns:40px 1fr 40px;align-items:center;padding:14px 16px;background:#f8fbf8;text-align:center}
+.calendar-nav{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--green-deep);font-size:25px;line-height:1;cursor:pointer}
+.student-calendar-weekdays,.student-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;background:#edf1ee}
+.student-calendar-weekdays span{padding:11px 4px;background:#f8fbf8;color:var(--muted);font-size:11px;font-weight:800;text-align:center;text-transform:uppercase}
+.calendar-day{min-height:72px;padding:9px 5px;background:#fff;color:var(--ink);font-size:14px;font-weight:700;text-align:center}
+.calendar-day small{display:block;margin-top:7px;font-size:10px;font-weight:800}
+.calendar-day-hadir{background:#eaf6ed;color:var(--green-deep)}
+.calendar-day-haid{background:#fff0ef;color:#b42318}
+.calendar-day-today{box-shadow:inset 0 0 0 2px var(--green)}
+.calendar-day-empty{background:#fafcfb}
+.student-calendar-legend{display:flex;flex-wrap:wrap;gap:14px;padding:14px 16px;color:var(--muted);font-size:12px}
+.student-calendar-legend span{display:inline-flex;align-items:center;gap:6px}
+.calendar-dot{width:10px;height:10px;border-radius:50%;background:#edf1ee}.calendar-dot-hadir{background:#b9d9c5}.calendar-dot-haid{background:#efb0aa}
+.student-settings-password{margin-top:22px}
+@media(max-width:680px){.student-settings-card{margin-top:28px;padding:22px 16px;border-radius:14px}.student-calendar{margin-top:22px}.calendar-day{min-height:64px;padding:8px 3px}.calendar-day small{font-size:9px;margin-top:6px}.student-calendar-legend{gap:10px;padding:12px;font-size:11px}}

@@ -1024,6 +1024,7 @@ function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
 function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanceNotice, onLogout, onChangePassword, prayerSchedule }) {
   const [timeNotice, setTimeNotice] = useState(null);
   const [haidConfirmationOpen, setHaidConfirmationOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const recorded = attendances.find(
     (item) => item.studentId === user.id && item.date === todayKey,
   );
@@ -1060,6 +1061,18 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
     setHaidConfirmationOpen(false);
     onHaid();
   }
+  if (settingsOpen) {
+    return (
+      <StudentSettingsPage
+        user={user}
+        attendances={attendances}
+        todayKey={todayKey}
+        onBack={() => setSettingsOpen(false)}
+        onChangePassword={onChangePassword}
+        onLogout={onLogout}
+      />
+    );
+  }
   return (
     <main className="student-shell">
       <header>
@@ -1067,6 +1080,7 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
           <UserMenu
             name={user.name}
             onChangePassword={onChangePassword}
+            onOpenSettings={() => setSettingsOpen(true)}
             onLogout={onLogout}
             disabled={Boolean(timeNotice || haidConfirmationOpen)}
           />
@@ -1159,6 +1173,93 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
           </section>
         </div>
       )}
+    </main>
+  );
+}
+
+function StudentSettingsPage({ user, attendances, todayKey, onBack, onChangePassword, onLogout }) {
+  const [month, setMonth] = useState(() => {
+    const current = new Date(todayKey + "T12:00:00");
+    return new Date(current.getFullYear(), current.getMonth(), 1);
+  });
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const firstDay = (new Date(year, monthIndex, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const attendanceByDate = new Map(
+    attendances
+      .filter((item) => item.studentId === user.id)
+      .map((item) => [item.date, item]),
+  );
+  const calendarDays = Array.from({ length: firstDay + daysInMonth }, (_, index) =>
+    index < firstDay ? null : index - firstDay + 1,
+  );
+  const monthLabel = month.toLocaleDateString("id-ID", {
+    month: "long",
+    year: "numeric",
+  });
+  function shiftMonth(amount) {
+    setMonth(new Date(year, monthIndex + amount, 1));
+  }
+  return (
+    <main className="student-shell student-settings-shell">
+      <header>
+        <Logo />
+        <UserMenu
+          name={user.name}
+          onChangePassword={onChangePassword}
+          onLogout={onLogout}
+        />
+      </header>
+      <section className="student-settings-card">
+        <button className="text-button student-settings-back" onClick={onBack}>
+          Kembali
+        </button>
+        <p className="eyebrow">PENGATURAN SISWA</p>
+        <h1>Kalender absensi</h1>
+        <p className="muted">
+          Cek riwayat konfirmasi sholat dan status haid Anda.
+        </p>
+        <div className="student-calendar">
+          <div className="student-calendar-head">
+            <button className="calendar-nav" onClick={() => shiftMonth(-1)} aria-label="Bulan sebelumnya">
+              ‹
+            </button>
+            <strong>{monthLabel}</strong>
+            <button className="calendar-nav" onClick={() => shiftMonth(1)} aria-label="Bulan berikutnya">
+              ›
+            </button>
+          </div>
+          <div className="student-calendar-weekdays">
+            {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((day) => <span key={day}>{day}</span>)}
+          </div>
+          <div className="student-calendar-grid">
+            {calendarDays.map((day, index) => {
+              if (!day) return <span className="calendar-day calendar-day-empty" key={`empty-${index}`} />;
+              const date = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+              const record = attendanceByDate.get(date);
+              const isToday = date === todayKey;
+              return (
+                <span
+                  className={`calendar-day${isToday ? " calendar-day-today" : ""}${record ? ` calendar-day-${record.status === "Haid" ? "haid" : "hadir"}` : ""}`}
+                  key={date}
+                >
+                  {day}
+                  {record && <small>{record.status === "Haid" ? "Haid" : "Hadir"}</small>}
+                </span>
+              );
+            })}
+          </div>
+          <div className="student-calendar-legend">
+            <span><i className="calendar-dot calendar-dot-hadir" /> Hadir</span>
+            <span><i className="calendar-dot calendar-dot-haid" /> Haid</span>
+            <span><i className="calendar-dot calendar-dot-empty" /> Belum tercatat</span>
+          </div>
+        </div>
+        <button className="secondary student-settings-password" onClick={onChangePassword}>
+          Ganti password
+        </button>
+      </section>
     </main>
   );
 }
@@ -1338,7 +1439,7 @@ function NavButton({ active, onClick, icon, children }) {
   );
 }
 
-function UserMenu({ name, onChangePassword, onLogout, disabled = false }) {
+function UserMenu({ name, onChangePassword, onOpenSettings, onLogout, disabled = false }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (disabled) setOpen(false);
@@ -1368,6 +1469,17 @@ function UserMenu({ name, onChangePassword, onLogout, disabled = false }) {
           >
             Ganti password
           </button>
+          {onOpenSettings && (
+            <button
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onOpenSettings();
+              }}
+            >
+              Pengaturan
+            </button>
+          )}
           <button
             role="menuitem"
             className="user-menu-logout"
