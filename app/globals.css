@@ -291,4 +291,7 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .report-metric.report-metric-haid{background:#fff0ef;border-color:#efb0aa;color:var(--ink)}
 .report-metric.report-metric-pending{background:#fff8d9;border-color:#f2d77c;color:var(--ink)}
 .metric{align-content:start;gap:8px}
+.attendance-check-page .unconfirmed-list>div>div strong,.attendance-check-page .attendance-person strong{font-size:16px;line-height:1.2;font-weight:700}
+.attendance-check-page .unconfirmed-list>div>div span,.attendance-check-page .attendance-person .attendance-class{font-size:12px;font-weight:400;color:var(--muted)}
+.attendance-check-page .attendance-person{gap:3px}
 @media(max-width:680px){.report-summary{grid-template-columns:1fr}.report-metric{min-height:0;padding:17px}.report-metric strong{font-size:36px}.report-summary p{grid-column:auto}.report-search{margin:0 14px 14px}}
