@@ -1573,10 +1573,15 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
   const confirmedCount = visibleAttendances.length;
   const haidCount = visibleAttendances.filter((item) => item.status === "Haid").length;
   const absent = visibleStudents.length - confirmedCount;
-  const confirmedPercentage = totalStudents
-    ? Number(((totalConfirmed / totalStudents) * 100).toFixed(1))
+  const sholatCount = attendances.filter((item) => item.status !== "Haid").length;
+  const schoolHaidCount = attendances.filter((item) => item.status === "Haid").length;
+  const sholatPercentage = totalStudents
+    ? Number(((sholatCount / totalStudents) * 100).toFixed(1))
     : 0;
-  const pendingPercentage = 100 - confirmedPercentage;
+  const haidPercentage = totalStudents
+    ? Number(((schoolHaidCount / totalStudents) * 100).toFixed(1))
+    : 0;
+  const pendingPercentage = Number((100 - sholatPercentage - haidPercentage).toFixed(1));
   const absentStudents = visibleStudents.filter(
     (student) => !visibleAttendances.some((item) => item.studentId === student.id),
   );
@@ -1600,19 +1605,20 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
         <div
           className="attendance-pie"
           style={{
-            background: `conic-gradient(var(--green) 0 ${confirmedPercentage}%, #f7e8cb ${confirmedPercentage}% 100%)`,
+            background: `conic-gradient(var(--green) 0 ${sholatPercentage}%, #efb0aa ${sholatPercentage}% ${sholatPercentage + haidPercentage}%, #f2d77c ${sholatPercentage + haidPercentage}% 100%)`,
           }}
         >
           <div>
-            <strong>{confirmedPercentage}%</strong>
-            <span>terkonfirmasi</span>
+            <strong>{sholatPercentage}%</strong>
+            <span>sholat</span>
           </div>
         </div>
         <div className="attendance-legend">
           <p className="eyebrow">PERSENTASE HARI INI</p>
           <h2>Progress konfirmasi</h2>
-          <span><i className="legend-dot legend-present" /> Sudah konfirmasi <b>{confirmedPercentage}%</b></span>
-          <span><i className="legend-dot legend-pending" /> Belum konfirmasi <b>{pendingPercentage}%</b></span>
+           <span><i className="legend-dot legend-present" /> Sholat <b>{sholatPercentage}%</b></span>
+           <span><i className="legend-dot legend-haid" /> Haid <b>{haidPercentage}%</b></span>
+           <span><i className="legend-dot legend-pending" /> Belum absen <b>{pendingPercentage}%</b></span>
         </div>
       </section>
       <section className="metric-grid">
