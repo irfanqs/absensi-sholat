@@ -1688,6 +1688,7 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
                   <button
                     className="mark-present-button"
                     onClick={() => onMarkStudentPresent(student)}
+                    disabled={isHoliday}
                   >
                     Tandai hadir
                   </button>
@@ -1695,6 +1696,7 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
                     <button
                       className="mark-present-button mark-haid-button"
                       onClick={() => onMarkStudentMenstruation(student)}
+                      disabled={isHoliday}
                     >
                       Tandai haid
                     </button>

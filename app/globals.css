@@ -215,6 +215,9 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 @media(max-width:680px){.report-controls{grid-template-columns:1fr}.report-controls label,.report-controls .period-toggle,.report-controls .report-export{grid-column:1/-1}}
 .mark-haid-button{border-color:#efb0aa;background:#fff1ef;color:#b42318}
 .mark-haid-button:hover{background:#ffe3df}
+.mark-present-button:disabled{opacity:.5;cursor:not-allowed}
+.mark-present-button:disabled:hover{background:#f2faf4}
+.mark-haid-button:disabled:hover{background:#fff1ef}
 .report-list .status-badge{vertical-align:middle}
 @media(min-width:681px){.unconfirmed-list>div{grid-template-columns:34px minmax(0,1fr) auto auto}}
 @media(max-width:680px){.unconfirmed-list>div{grid-template-columns:32px minmax(0,1fr) auto auto;gap:6px}.unconfirmed-list .mark-present-button{grid-column:auto;justify-self:stretch;padding:8px 7px;font-size:11px}}
