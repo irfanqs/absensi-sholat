@@ -269,6 +269,7 @@ function Logo() {
 export default function Home() {
   const [students, setStudents] = useState(supabase ? [] : initialStudents);
   const [attendances, setAttendances] = useState([]);
+  const [holidays, setHolidays] = useState([]);
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
   const [view, setView] = useState("dashboard");
@@ -292,15 +293,17 @@ export default function Home() {
     let active = true;
     async function loadData() {
       if (supabase) {
-        const [studentsResult, attendancesResult] = await Promise.all([
+        const [studentsResult, attendancesResult, holidaysResult] = await Promise.all([
           fetchAllSupabaseRows("students"),
           fetchAllSupabaseRows("attendances"),
+          fetchAllSupabaseRows("holidays"),
         ]);
         const remoteStudents = studentsResult.data;
         const remoteAttendances = attendancesResult.data;
         const studentsError = studentsResult.error;
         const attendancesError = attendancesResult.error;
-        if (studentsError || attendancesError)
+        const holidaysError = holidaysResult.error;
+        if (studentsError || attendancesError || holidaysError)
           setNotice(
             "Database belum siap. Jalankan schema Supabase terlebih dahulu.",
           );
@@ -335,11 +338,14 @@ export default function Home() {
               status: item.status,
             })),
           );
+        if (holidaysResult.data) setHolidays(holidaysResult.data.map((item) => item.date));
       } else {
         const storedStudents = localStorage.getItem("dzuhur-students");
         const storedAttendances = localStorage.getItem("dzuhur-attendances");
+        const storedHolidays = localStorage.getItem("dzuhur-holidays");
         if (storedStudents) setStudents(JSON.parse(storedStudents));
         if (storedAttendances) setAttendances(JSON.parse(storedAttendances));
+        if (storedHolidays) setHolidays(JSON.parse(storedHolidays));
       }
       const storedSession = localStorage.getItem("dzuhur-session");
       if (storedSession) setUser(JSON.parse(storedSession));
@@ -373,11 +379,16 @@ export default function Home() {
       localStorage.setItem("dzuhur-attendances", JSON.stringify(attendances));
   }, [attendances, ready]);
   useEffect(() => {
+    if (!ready) return;
+    if (!supabase) localStorage.setItem("dzuhur-holidays", JSON.stringify(holidays));
+  }, [holidays, ready]);
+  useEffect(() => {
     if (!supabase) return;
     async function refreshRemoteData() {
-      const [studentsResult, attendancesResult] = await Promise.all([
+      const [studentsResult, attendancesResult, holidaysResult] = await Promise.all([
         fetchAllSupabaseRows("students"),
         fetchAllSupabaseRows("attendances"),
+        fetchAllSupabaseRows("holidays"),
       ]);
       if (studentsResult.data) {
         setStudents(
@@ -405,11 +416,13 @@ export default function Home() {
           })),
         );
       }
+      if (holidaysResult.data) setHolidays(holidaysResult.data.map((item) => item.date));
     }
     const channel = supabase
       .channel("absensi-sholat-live")
       .on("postgres_changes", { event: "*", schema: "public", table: "students" }, refreshRemoteData)
       .on("postgres_changes", { event: "*", schema: "public", table: "attendances" }, refreshRemoteData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "holidays" }, refreshRemoteData)
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -492,6 +505,10 @@ export default function Home() {
   }
 
   async function recordAttendance(status) {
+    if (holidays.includes(todayKey)) {
+      setAttendanceNotice("Hari ini ditetapkan sebagai hari libur. Absensi tidak tersedia.");
+      return;
+    }
     if (
       attendances.some(
         (item) => item.studentId === user.id && item.date === todayKey,
@@ -538,7 +555,28 @@ export default function Home() {
     return recordAttendance("Haid");
   }
 
+  async function toggleHoliday() {
+    const isHoliday = holidays.includes(todayKey);
+    if (supabase) {
+      const result = isHoliday
+        ? await supabase.from("holidays").delete().eq("date", todayKey)
+        : await supabase.from("holidays").insert({ date: todayKey });
+      if (result.error) {
+        setNotice(`Gagal mengubah status hari libur: ${result.error.message}`);
+        return;
+      }
+    }
+    setHolidays((current) =>
+      isHoliday ? current.filter((date) => date !== todayKey) : [...current, todayKey],
+    );
+    setNotice("");
+  }
+
   async function markStudentPresent(student) {
+    if (holidays.includes(todayKey)) {
+      setNotice("Hari ini ditetapkan sebagai hari libur. Absensi tidak tersedia.");
+      return;
+    }
     if (attendances.some((item) => item.studentId === student.id && item.date === todayKey)) return;
     const record = {
       id: createId(),
@@ -572,6 +610,10 @@ export default function Home() {
   }
 
   async function markStudentMenstruation(student) {
+    if (holidays.includes(todayKey)) {
+      setNotice("Hari ini ditetapkan sebagai hari libur. Absensi tidak tersedia.");
+      return;
+    }
     if (student.gender !== "Perempuan") return;
     if (attendances.some((item) => item.studentId === student.id && item.date === todayKey)) return;
     const record = {
@@ -718,9 +760,10 @@ export default function Home() {
     return (
       <>
         <StudentPage
-          user={user}
-          attendances={attendances}
-          todayKey={todayKey}
+           user={user}
+           attendances={attendances}
+           holidays={holidays}
+           todayKey={todayKey}
           onConfirm={confirmPrayer}
            onHaid={recordMenstruation}
            prayerSchedule={prayerSchedule}
@@ -744,8 +787,10 @@ export default function Home() {
   return (
     <>
       <AdminApp
-      students={students}
-      attendances={todayAttendance}
+       students={students}
+       attendances={todayAttendance}
+       holidays={holidays}
+       todayKey={todayKey}
       history={attendances}
       view={view}
       setView={setView}
@@ -765,6 +810,7 @@ export default function Home() {
        onCancelAttendance={requestCancelAttendance}
        onMarkStudentPresent={markStudentPresent}
        onMarkStudentMenstruation={markStudentMenstruation}
+       onToggleHoliday={toggleHoliday}
       onImport={(imported) =>
         setStudents((current) => {
           const usernames = new Set(current.map((item) => item.username));
@@ -1022,10 +1068,11 @@ function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
   );
 }
 
-function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanceNotice, onLogout, onChangePassword, prayerSchedule }) {
+function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid, attendanceNotice, onLogout, onChangePassword, prayerSchedule }) {
   const [timeNotice, setTimeNotice] = useState(null);
   const [haidConfirmationOpen, setHaidConfirmationOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const isHoliday = holidays.includes(todayKey);
   const recorded = attendances.find(
     (item) => item.studentId === user.id && item.date === todayKey,
   );
@@ -1067,6 +1114,7 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
       <StudentSettingsPage
         user={user}
         attendances={attendances}
+        holidays={holidays}
         todayKey={todayKey}
         onBack={() => setSettingsOpen(false)}
         onChangePassword={onChangePassword}
@@ -1100,6 +1148,12 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
                 : "Absensi sholat Dzuhur Anda tercatat"} pukul{" "}
               <strong>{recorded.time}</strong>.
             </p>
+          </>
+        ) : isHoliday ? (
+          <>
+            <p className="eyebrow">HARI LIBUR</p>
+            <h1>Tidak ada absensi hari ini.</h1>
+            <p>Hari ini ditetapkan sebagai hari libur oleh guru.</p>
           </>
         ) : (
           <>
@@ -1178,7 +1232,7 @@ function StudentPage({ user, attendances, todayKey, onConfirm, onHaid, attendanc
   );
 }
 
-function StudentSettingsPage({ user, attendances, todayKey, onBack, onChangePassword, onLogout }) {
+function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, onChangePassword, onLogout }) {
   const [month, setMonth] = useState(() => {
     const current = new Date(todayKey + "T12:00:00");
     return new Date(current.getFullYear(), current.getMonth(), 1);
@@ -1243,14 +1297,15 @@ function StudentSettingsPage({ user, attendances, todayKey, onBack, onChangePass
               if (!day) return <span className="calendar-day calendar-day-empty" key={`empty-${index}`} />;
               const date = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
               const record = attendanceByDate.get(date);
+              const isHoliday = holidays.includes(date);
               const isToday = date === todayKey;
               return (
                 <span
-                  className={`calendar-day${isToday ? " calendar-day-today" : ""}${record ? ` calendar-day-${record.status === "Haid" ? "haid" : "hadir"}` : ""}`}
+                  className={`calendar-day${isToday ? " calendar-day-today" : ""}${isHoliday ? " calendar-day-holiday" : record ? ` calendar-day-${record.status === "Haid" ? "haid" : "hadir"}` : ""}`}
                   key={date}
                 >
                   {day}
-                  {record && <small>{record.status === "Haid" ? "Haid" : "Hadir"}</small>}
+                  {isHoliday ? <small>Libur</small> : record && <small>{record.status === "Haid" ? "Haid" : "Hadir"}</small>}
                 </span>
               );
             })}
@@ -1258,12 +1313,10 @@ function StudentSettingsPage({ user, attendances, todayKey, onBack, onChangePass
           <div className="student-calendar-legend">
             <span><i className="calendar-dot calendar-dot-hadir" /> Hadir</span>
             <span><i className="calendar-dot calendar-dot-haid" /> Haid</span>
+            <span><i className="calendar-dot calendar-dot-holiday" /> Libur</span>
             <span><i className="calendar-dot calendar-dot-empty" /> Belum tercatat</span>
           </div>
         </div>
-        <button className="secondary student-settings-password" onClick={onChangePassword}>
-          Ganti password
-        </button>
       </section>
     </main>
   );
@@ -1273,6 +1326,7 @@ function AdminApp(props) {
   const {
     students,
     attendances,
+    holidays,
     history,
     view,
     setView,
@@ -1290,6 +1344,8 @@ function AdminApp(props) {
     onCancelAttendance,
     onMarkStudentPresent,
     onMarkStudentMenstruation,
+    onToggleHoliday,
+    todayKey,
     prayerSchedule,
     onSavePrayerSchedule,
     onLogout,
@@ -1392,6 +1448,9 @@ function AdminApp(props) {
             onCancelAttendance={onCancelAttendance}
             onMarkStudentPresent={onMarkStudentPresent}
             onMarkStudentMenstruation={onMarkStudentMenstruation}
+            todayKey={todayKey}
+            isHoliday={holidays.includes(todayKey)}
+            onToggleHoliday={onToggleHoliday}
           />
         )}
         {view === "reports" && (
@@ -1472,7 +1531,7 @@ function UserMenu({ name, onChangePassword, onOpenSettings, onLogout, disabled =
               onChangePassword();
             }}
           >
-            Ganti password
+             Ganti Password
           </button>
           {onOpenSettings && (
             <button
@@ -1482,7 +1541,7 @@ function UserMenu({ name, onChangePassword, onOpenSettings, onLogout, disabled =
                 onOpenSettings();
               }}
             >
-              Kalender absensi
+              Kalender Absensi
             </button>
           )}
           <button
@@ -1493,7 +1552,7 @@ function UserMenu({ name, onChangePassword, onOpenSettings, onLogout, disabled =
               onLogout();
             }}
           >
-            Keluar <SignOut size={17} />
+             Keluar <SignOut size={17} />
           </button>
         </div>
       )}
@@ -1501,7 +1560,7 @@ function UserMenu({ name, onChangePassword, onOpenSettings, onLogout, disabled =
   );
 }
 
-function Dashboard({ students, classOptions, attendances, totalStudents, totalConfirmed, onCancelAttendance, onMarkStudentPresent, onMarkStudentMenstruation }) {
+function Dashboard({ students, classOptions, attendances, totalStudents, totalConfirmed, todayKey, isHoliday, onToggleHoliday, onCancelAttendance, onMarkStudentPresent, onMarkStudentMenstruation }) {
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const [searchQuery, setSearchQuery] = useState("");
   const [dashboardFilter, setDashboardFilter] = useState("all");
@@ -1533,6 +1592,10 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
   );
   return (
     <>
+      <button className={`holiday-toggle${isHoliday ? " holiday-active" : ""}`} onClick={onToggleHoliday}>
+        <CalendarBlank size={19} />
+        {isHoliday ? "Batalkan hari libur" : "Jadikan hari ini libur"}
+      </button>
       <section className="dashboard-insight">
         <div
           className="attendance-pie"

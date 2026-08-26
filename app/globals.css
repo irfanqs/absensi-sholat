@@ -146,9 +146,9 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .user-menu-trigger:disabled{opacity:.45;cursor:not-allowed;pointer-events:none}
 .user-menu-dropdown{position:absolute;right:0;top:calc(100% + 8px);width:210px;padding:6px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 30px rgba(18,61,42,.14)}
 .user-menu-name{padding:10px;border-bottom:1px solid var(--line);font-weight:750}
-.user-menu-dropdown button{width:100%;display:flex;align-items:center;justify-content:space-between;border:0;background:transparent;color:var(--ink);border-radius:8px;padding:11px 10px;text-align:left;cursor:pointer;font-weight:650}
+.user-menu-dropdown button{width:100%;display:flex;align-items:center;justify-content:space-between;border:0;background:transparent;color:var(--ink);border-radius:8px;padding:11px 10px;text-align:left;cursor:pointer;font-weight:400}
 .user-menu-dropdown button:hover{background:var(--mint)}
-.user-menu-dropdown .user-menu-logout{color:#b42318}
+.user-menu-dropdown .user-menu-logout{color:#b42318;font-weight:650}
 .haid-button{border:1px solid #efb0aa;background:#fff1ef;color:#b42318;border-radius:11px;padding:13px 18px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .haid-button:hover{background:#ffe3df}
 .report-export{white-space:nowrap}
@@ -224,6 +224,11 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 @media(max-width:680px){.unconfirmed-actions{width:100%}.unconfirmed-actions .mark-present-button{flex:1}}
 .student-settings-back{display:grid;place-items:center;width:40px;height:40px;margin-bottom:24px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--green-deep);cursor:pointer}
 .student-settings-back:hover{background:var(--mint)}
+.holiday-toggle{display:inline-flex;align-items:center;justify-content:center;gap:8px;margin-bottom:16px;border:1px solid #e2c36d;border-radius:10px;padding:11px 15px;background:#fff8dc;color:#765b10;font-weight:750;cursor:pointer}
+.holiday-toggle:hover,.holiday-toggle.holiday-active{background:#ffefb5}
+.calendar-day-holiday{background:#fff3bf;color:#765b10}
+.calendar-dot-holiday{background:#e2c36d}
+@media(max-width:680px){.holiday-toggle{width:100%;margin-bottom:14px}}
 .student-settings-shell{padding-bottom:40px}
 .student-settings-card{width:min(100%,720px);margin:clamp(40px,8vh,90px) auto 0;padding:32px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 42px rgba(18,61,42,.08)}
 .student-settings-back{margin-bottom:24px}
@@ -243,5 +248,4 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .student-calendar-legend{display:flex;flex-wrap:wrap;gap:14px;padding:14px 16px;color:var(--muted);font-size:12px}
 .student-calendar-legend span{display:inline-flex;align-items:center;gap:6px}
 .calendar-dot{width:10px;height:10px;border-radius:50%;background:#edf1ee}.calendar-dot-hadir{background:#b9d9c5}.calendar-dot-haid{background:#efb0aa}
-.student-settings-password{margin-top:22px}
 @media(max-width:680px){.student-settings-card{margin-top:28px;padding:22px 16px;border-radius:14px}.student-calendar{margin-top:22px}.calendar-day{min-height:64px;padding:8px 3px}.calendar-day small{font-size:9px;margin-top:6px}.student-calendar-legend{gap:10px;padding:12px;font-size:11px}}
