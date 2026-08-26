@@ -21,8 +21,14 @@ create table if not exists public.attendances (
   unique (student_id, date)
 );
 
+create table if not exists public.holidays (
+  date date primary key,
+  created_at timestamptz not null default now()
+);
+
 alter table public.students enable row level security;
 alter table public.attendances enable row level security;
+alter table public.holidays enable row level security;
 
 -- Temporary policies for the current username/password flow.
 -- Replace these with authenticated-user policies before production launch.
@@ -34,6 +40,9 @@ drop policy if exists "public can read attendances" on public.attendances;
 drop policy if exists "public can insert attendances" on public.attendances;
 drop policy if exists "public can update attendances" on public.attendances;
 drop policy if exists "public can delete attendances" on public.attendances;
+drop policy if exists "public can read holidays" on public.holidays;
+drop policy if exists "public can insert holidays" on public.holidays;
+drop policy if exists "public can delete holidays" on public.holidays;
 create policy "public can read students" on public.students for select using (true);
 create policy "public can insert students" on public.students for insert with check (true);
 create policy "public can update students" on public.students for update using (true) with check (true);
@@ -42,6 +51,9 @@ create policy "public can read attendances" on public.attendances for select usi
 create policy "public can insert attendances" on public.attendances for insert with check (true);
 create policy "public can update attendances" on public.attendances for update using (true) with check (true);
 create policy "public can delete attendances" on public.attendances for delete using (true);
+create policy "public can read holidays" on public.holidays for select using (true);
+create policy "public can insert holidays" on public.holidays for insert with check (true);
+create policy "public can delete holidays" on public.holidays for delete using (true);
 
 create index if not exists attendances_date_idx on public.attendances(date);
 create index if not exists attendances_student_idx on public.attendances(student_id);
@@ -56,4 +68,8 @@ begin
     select 1 from pg_publication_tables
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'attendances'
   ) then alter publication supabase_realtime add table public.attendances; end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'holidays'
+  ) then alter publication supabase_realtime add table public.holidays; end if;
 end $$;
