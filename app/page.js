@@ -1796,6 +1796,28 @@ function ReportPage({ students, history, onCancelAttendance }) {
       .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   }, [history, period, selectedDate, selectedClass]);
   const uniqueStudents = new Set(records.map((item) => item.studentId)).size;
+  const selectedStudents = students.filter(
+    (student) => selectedClass === "Semua kelas" || student.className === selectedClass,
+  );
+  const referenceDate = new Date(selectedDate + "T12:00:00");
+  const periodDays = period === "daily"
+    ? 1
+    : period === "weekly"
+      ? 7
+      : new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0).getDate();
+  const expectedAttendance = selectedStudents.length * periodDays;
+  const sholatRecords = records.filter((item) => item.status !== "Haid").length;
+  const haidRecords = records.filter((item) => item.status === "Haid").length;
+  const unrecordedAttendance = Math.max(expectedAttendance - records.length, 0);
+  const reportSholatPercentage = expectedAttendance
+    ? Number(((sholatRecords / expectedAttendance) * 100).toFixed(1))
+    : 0;
+  const reportHaidPercentage = expectedAttendance
+    ? Number(((haidRecords / expectedAttendance) * 100).toFixed(1))
+    : 0;
+  const reportPendingPercentage = expectedAttendance
+    ? Number(((unrecordedAttendance / expectedAttendance) * 100).toFixed(1))
+    : 0;
   function exportReport() {
     const rows = records.map((item, index) => ({
       No: index + 1,
@@ -1875,6 +1897,26 @@ function ReportPage({ students, history, onCancelAttendance }) {
               : "Daftar konfirmasi sholat selama bulan dari tanggal terpilih."}
         </p>
       </div>
+      <section className="dashboard-insight report-insight">
+        <div
+          className="attendance-pie"
+          style={{
+            background: `conic-gradient(var(--green) 0 ${reportSholatPercentage}%, #efb0aa ${reportSholatPercentage}% ${reportSholatPercentage + reportHaidPercentage}%, #f2d77c ${reportSholatPercentage + reportHaidPercentage}% 100%)`,
+          }}
+        >
+          <div>
+            <strong>{reportSholatPercentage}%</strong>
+            <span>sholat</span>
+          </div>
+        </div>
+        <div className="attendance-legend">
+          <p className="eyebrow">PERSENTASE PERIODE</p>
+          <h2>Progress absensi</h2>
+          <span><i className="legend-dot legend-present" /> Sholat <b>{reportSholatPercentage}%</b></span>
+          <span><i className="legend-dot legend-haid" /> Haid <b>{reportHaidPercentage}%</b></span>
+          <span><i className="legend-dot legend-pending" /> Belum absen <b>{reportPendingPercentage}%</b></span>
+        </div>
+      </section>
       <div className="report-list">
         {records.length ? (
           records.map((item, index) => (
