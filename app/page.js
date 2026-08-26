@@ -1655,9 +1655,9 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder={
               dashboardFilter === "confirmed"
-                ? "Cari nama murid yang sudah hadir..."
-                : dashboardFilter === "pending"
-                  ? "Cari murid yang belum hadir..."
+                  ? "Cari nama murid yang sudah hadir..."
+                  : dashboardFilter === "pending"
+                    ? "Cari nama murid yang belum hadir..."
                   : "Cari nama murid..."
             }
           />
@@ -1770,6 +1770,7 @@ function ReportPage({ students, history, onCancelAttendance }) {
   const [period, setPeriod] = useState("daily");
   const [selectedDate, setSelectedDate] = useState(today);
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
+  const [searchQuery, setSearchQuery] = useState("");
   const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
   const records = useMemo(() => {
     const reference = new Date(selectedDate + "T12:00:00");
@@ -1795,7 +1796,6 @@ function ReportPage({ students, history, onCancelAttendance }) {
       })
       .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   }, [history, period, selectedDate, selectedClass]);
-  const uniqueStudents = new Set(records.map((item) => item.studentId)).size;
   const selectedStudents = students.filter(
     (student) => selectedClass === "Semua kelas" || student.className === selectedClass,
   );
@@ -1818,8 +1818,13 @@ function ReportPage({ students, history, onCancelAttendance }) {
   const reportPendingPercentage = expectedAttendance
     ? Number(((unrecordedAttendance / expectedAttendance) * 100).toFixed(1))
     : 0;
+  const filteredRecords = records.filter((item) =>
+    `${item.studentName} ${item.className} ${item.status || "Hadir"}`
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase()),
+  );
   function exportReport() {
-    const rows = records.map((item, index) => ({
+    const rows = filteredRecords.map((item, index) => ({
       No: index + 1,
       Tanggal: item.date,
       Waktu: item.time,
@@ -1882,19 +1887,23 @@ function ReportPage({ students, history, onCancelAttendance }) {
       </div>
       <div className="report-summary">
         <div>
-          <span>Murid tercatat</span>
-          <strong>{uniqueStudents}</strong>
+          <span>Konfirmasi sholat</span>
+          <strong>{sholatRecords}</strong>
         </div>
         <div>
-          <span>Total konfirmasi</span>
-          <strong>{records.length}</strong>
+          <span>Haid</span>
+          <strong>{haidRecords}</strong>
+        </div>
+        <div>
+          <span>Tidak sholat</span>
+          <strong>{unrecordedAttendance}</strong>
         </div>
         <p>
           {period === "daily"
-            ? "Daftar murid yang sudah sholat pada tanggal terpilih."
+            ? "Jumlah murid pada tanggal terpilih berdasarkan status absensi."
             : period === "weekly"
-              ? "Daftar konfirmasi sholat selama minggu dari tanggal terpilih."
-              : "Daftar konfirmasi sholat selama bulan dari tanggal terpilih."}
+              ? "Jumlah murid selama minggu dari tanggal terpilih berdasarkan status absensi."
+              : "Jumlah murid selama bulan dari tanggal terpilih berdasarkan status absensi."}
         </p>
       </div>
       <section className="dashboard-insight report-insight">
@@ -1915,11 +1924,19 @@ function ReportPage({ students, history, onCancelAttendance }) {
           <span><i className="legend-dot legend-present" /> Sholat <b>{reportSholatPercentage}%</b></span>
           <span><i className="legend-dot legend-haid" /> Haid <b>{reportHaidPercentage}%</b></span>
           <span><i className="legend-dot legend-pending" /> Belum absen <b>{reportPendingPercentage}%</b></span>
-        </div>
+       </div>
       </section>
+      <label className="report-search">
+        <MagnifyingGlass size={19} />
+        <input
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Cari nama murid..."
+        />
+      </label>
       <div className="report-list">
-        {records.length ? (
-          records.map((item, index) => (
+        {filteredRecords.length ? (
+          filteredRecords.map((item, index) => (
             <div key={item.id}>
               <span className="person-initial attendance-number">{index + 1}</span>
                 <div>

@@ -234,6 +234,8 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .calendar-dot-holiday{background:#e2c36d}
 @media(max-width:680px){.holiday-toggle{width:100%;margin-bottom:14px}}
 .student-settings-shell{padding-bottom:40px}
+.report-summary{grid-template-columns:repeat(3,minmax(0,140px)) minmax(0,1fr)}
+@media(max-width:680px){.report-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.report-summary p{grid-column:1/-1}}
 .student-settings-card{width:min(100%,720px);margin:clamp(40px,8vh,90px) auto 0;padding:32px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 42px rgba(18,61,42,.08)}
 .student-settings-back{margin-bottom:24px}
 .student-settings-card h1{margin:0 0 8px;font-size:clamp(28px,4vw,40px);letter-spacing:-.04em}
@@ -257,3 +259,8 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .student-calendar .calendar-dot-holiday{background:#f2d77c}
 .student-calendar-legend span{white-space:nowrap}
 .report-insight{margin-left:16px;margin-right:16px}
+.report-search{display:flex;align-items:center;gap:9px;margin:16px 20px 16px;padding:0 13px;height:46px;border:1px solid #cddbd2;border-radius:10px;background:#fff;color:var(--muted)}
+.report-search:focus-within{border-color:var(--green);box-shadow:0 0 0 3px rgba(23,107,69,.1)}
+.report-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--ink);font-size:14px}
+.report-search input::placeholder{color:#8b9b92}
+@media(max-width:680px){.report-search{margin:14px 14px 14px}}
