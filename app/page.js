@@ -1537,7 +1537,6 @@ function AdminApp(props) {
           <ReportPage
             students={students}
             history={history}
-            onCancelAttendance={onCancelAttendance}
           />
         )}
         {view === "attendance-check" && (
@@ -1547,6 +1546,7 @@ function AdminApp(props) {
             holidays={holidays}
             todayKey={todayKey}
             onMarkStudentForDate={onMarkStudentForDate}
+            onCancelAttendance={onCancelAttendance}
           />
         )}
         {view === "students" && (
@@ -1853,13 +1853,14 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
     </>
   );
 }
-function ReportPage({ students, history, onCancelAttendance }) {
+function ReportPage({ students, history }) {
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
   }).format(new Date());
   const [period, setPeriod] = useState("daily");
   const [selectedDate, setSelectedDate] = useState(today);
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
+  const [reportFilter, setReportFilter] = useState("all");
   const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
   const referenceDate = new Date(selectedDate + "T12:00:00");
   const day = (referenceDate.getDay() + 6) % 7;
@@ -1894,6 +1895,12 @@ function ReportPage({ students, history, onCancelAttendance }) {
       ? 7
       : new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0).getDate();
   const expectedAttendance = selectedStudents.length * periodDays;
+  const periodDates = Array.from({ length: periodDays }, (_, index) => {
+    const date = period === "monthly"
+      ? new Date(referenceDate.getFullYear(), referenceDate.getMonth(), index + 1)
+      : new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
+    return date.toISOString().slice(0, 10);
+  });
   const sholatRecords = records.filter((item) => item.status !== "Haid").length;
   const haidRecords = records.filter((item) => item.status === "Haid").length;
   const unrecordedAttendance = Math.max(expectedAttendance - records.length, 0);
@@ -1919,6 +1926,29 @@ function ReportPage({ students, history, onCancelAttendance }) {
     month: "long",
     year: "numeric",
   });
+  const pendingRecords = reportFilter === "pending"
+    ? selectedStudents.flatMap((student) =>
+        periodDates
+          .filter(
+            (date) => !records.some((item) => item.studentId === student.id && item.date === date),
+          )
+          .map((date) => ({
+            id: `pending-${student.id}-${date}`,
+            studentName: student.name,
+            className: student.className,
+            date,
+            status: "Tidak Sholat",
+            pending: true,
+          })),
+      )
+    : [];
+  const displayedRecords = reportFilter === "sholat"
+    ? records.filter((item) => item.status !== "Haid")
+    : reportFilter === "haid"
+      ? records.filter((item) => item.status === "Haid")
+      : reportFilter === "pending"
+        ? pendingRecords
+        : records;
   function exportReport() {
     const rows = records.map((item, index) => ({
       No: index + 1,
@@ -1982,18 +2012,6 @@ function ReportPage({ students, history, onCancelAttendance }) {
         </button>
       </div>
       <div className="report-summary">
-        <div>
-          <span>Konfirmasi sholat</span>
-          <strong>{sholatRecords}</strong>
-        </div>
-        <div>
-          <span>Haid</span>
-          <strong>{haidRecords}</strong>
-        </div>
-        <div>
-          <span>Tidak sholat</span>
-          <strong>{unrecordedAttendance}</strong>
-        </div>
         <p>
           {period === "daily"
             ? "Jumlah murid pada tanggal terpilih berdasarkan status absensi."
@@ -2001,6 +2019,27 @@ function ReportPage({ students, history, onCancelAttendance }) {
               ? `Menampilkan data dari ${weeklyRangeLabel} berdasarkan status absensi.`
               : `Menampilkan data bulan ${monthlyLabel} berdasarkan status absensi.`}
         </p>
+        <button
+          className={reportFilter === "sholat" ? "report-metric active" : "report-metric"}
+          onClick={() => setReportFilter("sholat")}
+        >
+          <span>Konfirmasi sholat</span>
+          <strong>{sholatRecords}</strong>
+        </button>
+        <button
+          className={reportFilter === "haid" ? "report-metric active" : "report-metric"}
+          onClick={() => setReportFilter("haid")}
+        >
+          <span>Haid</span>
+          <strong>{haidRecords}</strong>
+        </button>
+        <button
+          className={reportFilter === "pending" ? "report-metric active" : "report-metric"}
+          onClick={() => setReportFilter("pending")}
+        >
+          <span>Tidak sholat</span>
+          <strong>{unrecordedAttendance}</strong>
+        </button>
       </div>
       <section className="dashboard-insight report-insight">
         <div
@@ -2023,15 +2062,15 @@ function ReportPage({ students, history, onCancelAttendance }) {
        </div>
       </section>
       <div className="report-list">
-        {records.length ? (
-          records.map((item, index) => (
+        {displayedRecords.length ? (
+          displayedRecords.map((item, index) => (
             <div key={item.id}>
               <span className="person-initial attendance-number">{index + 1}</span>
                 <div>
                   <strong>{item.studentName}</strong>
                    <span>
                      Kelas {item.className} ·{" "}
-                     <b className={item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
+                      <b className={item.pending ? "status-badge status-pending" : item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
                        {item.status || "Hadir"}
                      </b>
                    </span>
@@ -2041,21 +2080,14 @@ function ReportPage({ students, history, onCancelAttendance }) {
                   day: "numeric",
                   month: "short",
                 }).format(new Date(item.date + "T12:00:00"))}
-                <b>{item.time}</b>
-                <button
-                  className="cancel-attendance"
-                  aria-label={`Batalkan status ${item.studentName}`}
-                  onClick={() => onCancelAttendance(item)}
-                >
-                  <X size={16} />
-                </button>
+                {!item.pending && <b>{item.time}</b>}
               </time>
             </div>
           ))
         ) : (
           <div className="empty">
             <CalendarBlank size={28} />
-            <span>Belum ada absensi pada periode ini.</span>
+            <span>Tidak ada murid pada status yang dipilih.</span>
           </div>
         )}
       </div>
@@ -2063,7 +2095,7 @@ function ReportPage({ students, history, onCancelAttendance }) {
   );
 }
 
-function AttendanceCheckPage({ students, history, holidays, todayKey, onMarkStudentForDate }) {
+function AttendanceCheckPage({ students, history, holidays, todayKey, onMarkStudentForDate, onCancelAttendance }) {
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const [searchQuery, setSearchQuery] = useState("");
@@ -2178,6 +2210,13 @@ function AttendanceCheckPage({ students, history, holidays, todayKey, onMarkStud
                     {item.status || "Hadir"}
                   </b>
                   <time>{item.time}</time>
+                  <button
+                    className="cancel-attendance"
+                    aria-label={`Batalkan status ${item.studentName}`}
+                    onClick={() => onCancelAttendance(item)}
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
               </div>
             ))}
