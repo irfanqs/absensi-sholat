@@ -1861,6 +1861,7 @@ function ReportPage({ students, history }) {
   const [selectedDate, setSelectedDate] = useState(today);
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const [reportFilter, setReportFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
   const referenceDate = new Date(selectedDate + "T12:00:00");
   const day = (referenceDate.getDay() + 6) % 7;
@@ -1949,6 +1950,11 @@ function ReportPage({ students, history }) {
       : reportFilter === "pending"
         ? pendingRecords
         : records;
+  const searchedRecords = displayedRecords.filter((item) =>
+    `${item.studentName} ${item.className} ${item.status}`
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase()),
+  );
   function exportReport() {
     const rows = records.map((item, index) => ({
       No: index + 1,
@@ -2020,21 +2026,21 @@ function ReportPage({ students, history }) {
               : `Menampilkan data bulan ${monthlyLabel} berdasarkan status absensi.`}
         </p>
         <button
-          className={reportFilter === "sholat" ? "report-metric active" : "report-metric"}
+          className={`report-metric report-metric-sholat${reportFilter === "sholat" ? " active" : ""}`}
           onClick={() => setReportFilter("sholat")}
         >
           <span>Konfirmasi sholat</span>
           <strong>{sholatRecords}</strong>
         </button>
         <button
-          className={reportFilter === "haid" ? "report-metric active" : "report-metric"}
+          className={`report-metric report-metric-haid${reportFilter === "haid" ? " active" : ""}`}
           onClick={() => setReportFilter("haid")}
         >
           <span>Haid</span>
           <strong>{haidRecords}</strong>
         </button>
         <button
-          className={reportFilter === "pending" ? "report-metric active" : "report-metric"}
+          className={`report-metric report-metric-pending${reportFilter === "pending" ? " active" : ""}`}
           onClick={() => setReportFilter("pending")}
         >
           <span>Tidak sholat</span>
@@ -2061,9 +2067,17 @@ function ReportPage({ students, history }) {
           <span><i className="legend-dot legend-pending" /> Belum absen <b>{reportPendingPercentage}%</b></span>
        </div>
       </section>
+      <label className="report-search">
+        <MagnifyingGlass size={19} />
+        <input
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Cari nama murid..."
+        />
+      </label>
       <div className="report-list">
-        {displayedRecords.length ? (
-          displayedRecords.map((item, index) => (
+        {searchedRecords.length ? (
+          searchedRecords.map((item, index) => (
             <div key={item.id}>
               <span className="person-initial attendance-number">{index + 1}</span>
                 <div>
