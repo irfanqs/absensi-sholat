@@ -257,6 +257,9 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 @media(max-width:680px){.student-settings-card{margin-top:28px;padding:22px 16px;border-radius:14px}.student-calendar{margin-top:22px}.calendar-day{min-height:64px;padding:8px 3px}.calendar-day small{font-size:9px;margin-top:6px}.student-calendar-legend{gap:10px;padding:12px;font-size:11px}}
 .student-calendar .calendar-day-holiday{background:#fff8d9;color:#806b22}
 .student-calendar .calendar-dot-holiday{background:#f2d77c}
+.server-clock{display:grid;gap:4px;margin:20px 0;padding:14px 16px;border:1px solid #cddbd2;border-radius:10px;background:#f8fbf8;color:var(--muted)}
+.server-clock span{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.server-clock strong{color:var(--green-deep);font-size:16px;font-weight:400}
 .student-calendar-legend span{white-space:nowrap}
 .report-insight{margin-left:16px;margin-right:16px}
 .report-search{display:flex;align-items:center;gap:9px;margin:16px 20px 16px;padding:0 13px;height:46px;border:1px solid #cddbd2;border-radius:10px;background:#fff;color:var(--muted)}
@@ -264,3 +267,10 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .report-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--ink);font-size:14px}
 .report-search input::placeholder{color:#8b9b92}
 @media(max-width:680px){.report-search{margin:14px 14px 14px}}
+.report-unconfirmed{margin:0 20px 16px}
+.report-holiday-note{margin:0;padding:18px 20px;color:#806b22;background:#fff8d9;font-size:13px}
+@media(max-width:680px){.report-unconfirmed{margin:0 14px 14px}}
+.report-list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px 12px;border-top:1px solid var(--line)}
+.report-list-heading h2{margin:0;font-size:20px}
+.report-list-heading span{color:var(--muted);font-size:12px}
+@media(max-width:680px){.report-list-heading{padding:16px 14px 10px}.report-list-heading h2{font-size:18px}}

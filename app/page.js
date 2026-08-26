@@ -112,6 +112,11 @@ async function fetchAllSupabaseRows(table, columns = "*") {
   }
 }
 
+async function fetchServerTime() {
+  const { data, error } = await supabase.rpc("get_server_time");
+  return error || !data ? null : new Date(data);
+}
+
 function parseImportedRows(rows, existingStudents = []) {
   const headerIndex = rows.findIndex((row) =>
     row.some((cell) =>
@@ -269,6 +274,7 @@ function Logo() {
 export default function Home() {
   const [students, setStudents] = useState(supabase ? [] : initialStudents);
   const [attendances, setAttendances] = useState([]);
+  const [serverNow, setServerNow] = useState(new Date());
   const [holidays, setHolidays] = useState([]);
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
@@ -287,12 +293,14 @@ export default function Home() {
 
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
-  }).format(new Date());
+  }).format(serverNow);
 
   useEffect(() => {
     let active = true;
     async function loadData() {
       if (supabase) {
+        const initialServerTime = await fetchServerTime();
+        if (initialServerTime) setServerNow(initialServerTime);
         const [studentsResult, attendancesResult, holidaysResult] = await Promise.all([
           fetchAllSupabaseRows("students"),
           fetchAllSupabaseRows("attendances"),
@@ -367,6 +375,23 @@ export default function Home() {
     loadData();
     return () => {
       active = false;
+    };
+  }, []);
+  useEffect(() => {
+    const ticker = setInterval(() => {
+      setServerNow((current) => new Date(current.getTime() + 1000));
+    }, 1000);
+    if (!supabase) return () => clearInterval(ticker);
+    let active = true;
+    const sync = async () => {
+      const current = await fetchServerTime();
+      if (active && current) setServerNow(current);
+    };
+    const syncTimer = setInterval(sync, 30000);
+    return () => {
+      active = false;
+      clearInterval(ticker);
+      clearInterval(syncTimer);
     };
   }, []);
   useEffect(() => {
@@ -525,7 +550,7 @@ export default function Home() {
         hour: "2-digit",
         minute: "2-digit",
         timeZone: "Asia/Jakarta",
-      }).format(new Date()),
+       }).format(serverNow),
       status,
     };
     if (supabase) {
@@ -572,6 +597,48 @@ export default function Home() {
     setNotice("");
   }
 
+  async function markStudentForDate(student, status, date) {
+    if (date > todayKey) {
+      setNotice("Absensi untuk tanggal mendatang belum tersedia.");
+      return;
+    }
+    if (holidays.includes(date)) {
+      setNotice("Tanggal tersebut ditetapkan sebagai hari libur. Absensi tidak tersedia.");
+      return;
+    }
+    if (attendances.some((item) => item.studentId === student.id && item.date === date)) return;
+    const record = {
+      id: createId(),
+      studentId: student.id,
+      studentName: student.name,
+      className: student.className,
+      date,
+      time: new Intl.DateTimeFormat("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Jakarta",
+      }).format(serverNow),
+      status,
+    };
+    if (supabase) {
+      const { error } = await supabase.from("attendances").insert({
+        id: String(record.id),
+        student_id: String(record.studentId),
+        student_name: record.studentName,
+        class_name: record.className,
+        date: record.date,
+        time: record.time,
+        status: record.status,
+      });
+      if (error) {
+        setNotice(`Gagal menandai absensi: ${error.message}`);
+        return;
+      }
+    }
+    setNotice("");
+    setAttendances((current) => [record, ...current]);
+  }
+
   async function markStudentPresent(student) {
     if (holidays.includes(todayKey)) {
       setNotice("Hari ini ditetapkan sebagai hari libur. Absensi tidak tersedia.");
@@ -588,7 +655,7 @@ export default function Home() {
         hour: "2-digit",
         minute: "2-digit",
         timeZone: "Asia/Jakarta",
-      }).format(new Date()),
+       }).format(serverNow),
       status: "Hadir",
     };
     if (supabase) {
@@ -626,7 +693,7 @@ export default function Home() {
         hour: "2-digit",
         minute: "2-digit",
         timeZone: "Asia/Jakarta",
-      }).format(new Date()),
+       }).format(serverNow),
       status: "Haid",
     };
     if (supabase) {
@@ -791,6 +858,7 @@ export default function Home() {
        attendances={todayAttendance}
        holidays={holidays}
        todayKey={todayKey}
+       serverNow={serverNow}
       history={attendances}
       view={view}
       setView={setView}
@@ -811,6 +879,7 @@ export default function Home() {
        onMarkStudentPresent={markStudentPresent}
        onMarkStudentMenstruation={markStudentMenstruation}
        onToggleHoliday={toggleHoliday}
+       onMarkStudentForDate={markStudentForDate}
       onImport={(imported) =>
         setStudents((current) => {
           const usernames = new Set(current.map((item) => item.username));
@@ -1345,7 +1414,9 @@ function AdminApp(props) {
     onMarkStudentPresent,
     onMarkStudentMenstruation,
     onToggleHoliday,
+    onMarkStudentForDate,
     todayKey,
+    serverNow,
     prayerSchedule,
     onSavePrayerSchedule,
     onLogout,
@@ -1399,7 +1470,7 @@ function AdminApp(props) {
             onClick={() => selectView("students")}
             icon={<UsersThree size={20} />}
           >
-            Data murid
+             Data Murid
           </NavButton>
           <NavButton
             active={view === "qr"}
@@ -1423,13 +1494,13 @@ function AdminApp(props) {
             {view === "dashboard" && <p className="eyebrow">{formatDate()}</p>}
             <h1>
               {view === "dashboard"
-                ? "Ringkasan hari ini"
-                : view === "reports"
-                  ? "Rekap absensi"
-                  : view === "students"
-                    ? "Data murid"
-                    : view === "qr"
-                      ? "QR sholat Dzuhur"
+                 ? "Ringkasan Hari Ini"
+                 : view === "reports"
+                   ? "Rekap Absensi"
+                   : view === "students"
+                     ? "Data Murid"
+                     : view === "qr"
+                       ? "QR Sholat Dzuhur"
                       : "Pengaturan"}
             </h1>
           </div>
@@ -1457,6 +1528,9 @@ function AdminApp(props) {
           <ReportPage
             students={students}
             history={history}
+            holidays={holidays}
+            todayKey={todayKey}
+            onMarkStudentForDate={onMarkStudentForDate}
             onCancelAttendance={onCancelAttendance}
           />
         )}
@@ -1480,6 +1554,7 @@ function AdminApp(props) {
             onChangePassword={onOpenPasswordChange}
             prayerSchedule={prayerSchedule}
             onSavePrayerSchedule={onSavePrayerSchedule}
+            serverNow={serverNow}
           />
         )}
       </main>
@@ -1763,7 +1838,7 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
     </>
   );
 }
-function ReportPage({ students, history, onCancelAttendance }) {
+function ReportPage({ students, history, holidays, todayKey, onMarkStudentForDate, onCancelAttendance }) {
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
   }).format(new Date());
@@ -1772,14 +1847,14 @@ function ReportPage({ students, history, onCancelAttendance }) {
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const [searchQuery, setSearchQuery] = useState("");
   const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
+  const referenceDate = new Date(selectedDate + "T12:00:00");
+  const day = (referenceDate.getDay() + 6) % 7;
+  const start = new Date(referenceDate);
+  start.setDate(referenceDate.getDate() - day);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  const month = selectedDate.slice(0, 7);
   const records = useMemo(() => {
-    const reference = new Date(selectedDate + "T12:00:00");
-    const day = (reference.getDay() + 6) % 7;
-    const start = new Date(reference);
-    start.setDate(reference.getDate() - day);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    const month = selectedDate.slice(0, 7);
     return history
       .filter((item) => {
         const inPeriod =
@@ -1799,7 +1874,6 @@ function ReportPage({ students, history, onCancelAttendance }) {
   const selectedStudents = students.filter(
     (student) => selectedClass === "Semua kelas" || student.className === selectedClass,
   );
-  const referenceDate = new Date(selectedDate + "T12:00:00");
   const periodDays = period === "daily"
     ? 1
     : period === "weekly"
@@ -1818,11 +1892,30 @@ function ReportPage({ students, history, onCancelAttendance }) {
   const reportPendingPercentage = expectedAttendance
     ? Number(((unrecordedAttendance / expectedAttendance) * 100).toFixed(1))
     : 0;
+  const weeklyRangeLabel = `${start.toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  })} hingga ${end.toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  })}`;
+  const monthlyLabel = referenceDate.toLocaleDateString("id-ID", {
+    month: "long",
+    year: "numeric",
+  });
   const filteredRecords = records.filter((item) =>
     `${item.studentName} ${item.className} ${item.status || "Hadir"}`
       .toLowerCase()
       .includes(searchQuery.toLowerCase()),
   );
+  const unconfirmedStudents = period === "daily"
+    ? selectedStudents.filter(
+        (student) => !records.some((item) => item.studentId === student.id),
+      )
+    : [];
+  const selectedDateIsHoliday = holidays.includes(selectedDate);
   function exportReport() {
     const rows = filteredRecords.map((item, index) => ({
       No: index + 1,
@@ -1902,8 +1995,8 @@ function ReportPage({ students, history, onCancelAttendance }) {
           {period === "daily"
             ? "Jumlah murid pada tanggal terpilih berdasarkan status absensi."
             : period === "weekly"
-              ? "Jumlah murid selama minggu dari tanggal terpilih berdasarkan status absensi."
-              : "Jumlah murid selama bulan dari tanggal terpilih berdasarkan status absensi."}
+              ? `Menampilkan data dari ${weeklyRangeLabel} berdasarkan status absensi.`
+              : `Menampilkan data bulan ${monthlyLabel} berdasarkan status absensi.`}
         </p>
       </div>
       <section className="dashboard-insight report-insight">
@@ -1934,6 +2027,48 @@ function ReportPage({ students, history, onCancelAttendance }) {
           placeholder="Cari nama murid..."
         />
       </label>
+      {period === "daily" && unconfirmedStudents.length > 0 && (
+        <section className="unconfirmed-panel report-unconfirmed">
+          <div className="panel-title">
+            <div>
+              <h2>Murid Belum Absen</h2>
+              <p>Guru dapat menandai status untuk tanggal yang dipilih.</p>
+            </div>
+            <span>{unconfirmedStudents.length} murid</span>
+          </div>
+          {selectedDateIsHoliday ? (
+            <p className="report-holiday-note">Tanggal ini ditetapkan sebagai hari libur.</p>
+          ) : (
+            <div className="unconfirmed-list">
+              {unconfirmedStudents.map((student, index) => (
+                <div key={student.id}>
+                  <span className="person-initial attendance-number">{index + 1}</span>
+                  <div>
+                    <strong>{student.name}</strong>
+                    <span>Kelas {student.className}</span>
+                  </div>
+                  <div className="unconfirmed-actions">
+                    <button className="mark-present-button" disabled={selectedDate > todayKey} onClick={() => onMarkStudentForDate(student, "Hadir", selectedDate)}>
+                      Tandai Hadir
+                    </button>
+                    {student.gender === "Perempuan" && (
+                      <button className="mark-present-button mark-haid-button" disabled={selectedDate > todayKey} onClick={() => onMarkStudentForDate(student, "Haid", selectedDate)}>
+                        Tandai Haid
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+      {filteredRecords.length > 0 && (
+        <div className="report-list-heading">
+          <h2>Sudah Absen</h2>
+          <span>{filteredRecords.length} konfirmasi</span>
+        </div>
+      )}
       <div className="report-list">
         {filteredRecords.length ? (
           filteredRecords.map((item, index) => (
@@ -1967,7 +2102,7 @@ function ReportPage({ students, history, onCancelAttendance }) {
         ) : (
           <div className="empty">
             <CalendarBlank size={28} />
-            <span>Belum ada absensi pada periode ini.</span>
+            <span>{records.length ? "Murid tidak ditemukan." : "Belum ada absensi pada periode ini."}</span>
           </div>
         )}
       </div>
@@ -2322,7 +2457,7 @@ function QrPage() {
     </section>
   );
 }
-function SettingsPage({ onLogout, onChangePassword, prayerSchedule, onSavePrayerSchedule }) {
+function SettingsPage({ onLogout, onChangePassword, prayerSchedule, onSavePrayerSchedule, serverNow }) {
   const [draftSchedule, setDraftSchedule] = useState(prayerSchedule);
   const [scheduleNotice, setScheduleNotice] = useState("");
 
@@ -2341,13 +2476,17 @@ function SettingsPage({ onLogout, onChangePassword, prayerSchedule, onSavePrayer
   }
 
   return (
-    <section className="simple-panel">
-      <ClipboardText size={28} />
-      <h2>Pengaturan aplikasi</h2>
-      <p>
-        QR permanen memakai alamat web yang sedang dibuka dan mengarah ke
-        halaman Dzuhur.
-      </p>
+      <section className="simple-panel">
+        <ClipboardText size={28} />
+        <h2>Pengaturan aplikasi</h2>
+        <div className="server-clock">
+          <span>Waktu server (WIB)</span>
+          <strong>{new Intl.DateTimeFormat("id-ID", {
+            dateStyle: "full",
+            timeStyle: "medium",
+            timeZone: "Asia/Jakarta",
+          }).format(serverNow)}</strong>
+        </div>
       <form className="prayer-schedule-settings" onSubmit={saveSchedule}>
         <div>
           <strong>Jadwal konfirmasi Dzuhur</strong>
