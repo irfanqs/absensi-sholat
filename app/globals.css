@@ -249,6 +249,6 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .student-calendar-legend span{display:inline-flex;align-items:center;gap:6px}
 .calendar-dot{width:10px;height:10px;border-radius:50%;background:#edf1ee}.calendar-dot-hadir{background:#b9d9c5}.calendar-dot-haid{background:#efb0aa}
 @media(max-width:680px){.student-settings-card{margin-top:28px;padding:22px 16px;border-radius:14px}.student-calendar{margin-top:22px}.calendar-day{min-height:64px;padding:8px 3px}.calendar-day small{font-size:9px;margin-top:6px}.student-calendar-legend{gap:10px;padding:12px;font-size:11px}}
-.student-calendar .calendar-day-holiday{background:#fff3bf;color:#765b10}
-.student-calendar .calendar-dot-holiday{background:#e2c36d}
+.student-calendar .calendar-day-holiday{background:#fff8d9;color:#806b22}
+.student-calendar .calendar-dot-holiday{background:#f2d77c}
 .student-calendar-legend span{white-space:nowrap}
