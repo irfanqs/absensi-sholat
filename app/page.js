@@ -1463,7 +1463,14 @@ function AdminApp(props) {
             onClick={() => selectView("reports")}
             icon={<CalendarBlank size={20} />}
           >
-            Rekap
+            Rekap Absensi
+          </NavButton>
+          <NavButton
+            active={view === "attendance-check"}
+            onClick={() => selectView("attendance-check")}
+            icon={<ClipboardText size={20} />}
+          >
+            Cek Absensi
           </NavButton>
           <NavButton
             active={view === "students"}
@@ -1497,11 +1504,13 @@ function AdminApp(props) {
                  ? "Ringkasan Hari Ini"
                  : view === "reports"
                    ? "Rekap Absensi"
-                   : view === "students"
-                     ? "Data Murid"
-                     : view === "qr"
-                       ? "QR Sholat Dzuhur"
-                      : "Pengaturan"}
+                  : view === "students"
+                    ? "Data Murid"
+                    : view === "attendance-check"
+                      ? "Cek Absensi"
+                      : view === "qr"
+                        ? "QR Sholat Dzuhur"
+                        : "Pengaturan"}
             </h1>
           </div>
         </header>
@@ -1528,10 +1537,16 @@ function AdminApp(props) {
           <ReportPage
             students={students}
             history={history}
+            onCancelAttendance={onCancelAttendance}
+          />
+        )}
+        {view === "attendance-check" && (
+          <AttendanceCheckPage
+            students={students}
+            history={history}
             holidays={holidays}
             todayKey={todayKey}
             onMarkStudentForDate={onMarkStudentForDate}
-            onCancelAttendance={onCancelAttendance}
           />
         )}
         {view === "students" && (
@@ -1838,14 +1853,13 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
     </>
   );
 }
-function ReportPage({ students, history, holidays, todayKey, onMarkStudentForDate, onCancelAttendance }) {
+function ReportPage({ students, history, onCancelAttendance }) {
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
   }).format(new Date());
   const [period, setPeriod] = useState("daily");
   const [selectedDate, setSelectedDate] = useState(today);
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
-  const [searchQuery, setSearchQuery] = useState("");
   const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
   const referenceDate = new Date(selectedDate + "T12:00:00");
   const day = (referenceDate.getDay() + 6) % 7;
@@ -1905,19 +1919,8 @@ function ReportPage({ students, history, holidays, todayKey, onMarkStudentForDat
     month: "long",
     year: "numeric",
   });
-  const filteredRecords = records.filter((item) =>
-    `${item.studentName} ${item.className} ${item.status || "Hadir"}`
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase()),
-  );
-  const unconfirmedStudents = period === "daily"
-    ? selectedStudents.filter(
-        (student) => !records.some((item) => item.studentId === student.id),
-      )
-    : [];
-  const selectedDateIsHoliday = holidays.includes(selectedDate);
   function exportReport() {
-    const rows = filteredRecords.map((item, index) => ({
+    const rows = records.map((item, index) => ({
       No: index + 1,
       Tanggal: item.date,
       Waktu: item.time,
@@ -2019,59 +2022,9 @@ function ReportPage({ students, history, holidays, todayKey, onMarkStudentForDat
           <span><i className="legend-dot legend-pending" /> Belum absen <b>{reportPendingPercentage}%</b></span>
        </div>
       </section>
-      <label className="report-search">
-        <MagnifyingGlass size={19} />
-        <input
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Cari nama murid..."
-        />
-      </label>
-      {period === "daily" && unconfirmedStudents.length > 0 && (
-        <section className="unconfirmed-panel report-unconfirmed">
-          <div className="panel-title">
-            <div>
-              <h2>Murid Belum Absen</h2>
-              <p>Guru dapat menandai status untuk tanggal yang dipilih.</p>
-            </div>
-            <span>{unconfirmedStudents.length} murid</span>
-          </div>
-          {selectedDateIsHoliday ? (
-            <p className="report-holiday-note">Tanggal ini ditetapkan sebagai hari libur.</p>
-          ) : (
-            <div className="unconfirmed-list">
-              {unconfirmedStudents.map((student, index) => (
-                <div key={student.id}>
-                  <span className="person-initial attendance-number">{index + 1}</span>
-                  <div>
-                    <strong>{student.name}</strong>
-                    <span>Kelas {student.className}</span>
-                  </div>
-                  <div className="unconfirmed-actions">
-                    <button className="mark-present-button" disabled={selectedDate > todayKey} onClick={() => onMarkStudentForDate(student, "Hadir", selectedDate)}>
-                      Tandai Hadir
-                    </button>
-                    {student.gender === "Perempuan" && (
-                      <button className="mark-present-button mark-haid-button" disabled={selectedDate > todayKey} onClick={() => onMarkStudentForDate(student, "Haid", selectedDate)}>
-                        Tandai Haid
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-      {filteredRecords.length > 0 && (
-        <div className="report-list-heading">
-          <h2>Sudah Absen</h2>
-          <span>{filteredRecords.length} konfirmasi</span>
-        </div>
-      )}
       <div className="report-list">
-        {filteredRecords.length ? (
-          filteredRecords.map((item, index) => (
+        {records.length ? (
+          records.map((item, index) => (
             <div key={item.id}>
               <span className="person-initial attendance-number">{index + 1}</span>
                 <div>
@@ -2102,10 +2055,135 @@ function ReportPage({ students, history, holidays, todayKey, onMarkStudentForDat
         ) : (
           <div className="empty">
             <CalendarBlank size={28} />
-            <span>{records.length ? "Murid tidak ditemukan." : "Belum ada absensi pada periode ini."}</span>
+            <span>Belum ada absensi pada periode ini.</span>
           </div>
         )}
       </div>
+    </section>
+  );
+}
+
+function AttendanceCheckPage({ students, history, holidays, todayKey, onMarkStudentForDate }) {
+  const [selectedDate, setSelectedDate] = useState(todayKey);
+  const [selectedClass, setSelectedClass] = useState("Semua kelas");
+  const [searchQuery, setSearchQuery] = useState("");
+  const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
+  const matchesSearch = (value) => value.toLowerCase().includes(searchQuery.toLowerCase());
+  const selectedStudents = students.filter(
+    (student) =>
+      (selectedClass === "Semua kelas" || student.className === selectedClass) &&
+      matchesSearch(`${student.name} ${student.className}`),
+  );
+  const selectedAttendances = history
+    .filter(
+      (item) =>
+        item.date === selectedDate &&
+        (selectedClass === "Semua kelas" || item.className === selectedClass) &&
+        matchesSearch(`${item.studentName} ${item.className} ${item.status || "Hadir"}`),
+    )
+    .sort((first, second) => first.studentName.localeCompare(second.studentName, "id"));
+  const unconfirmedStudents = selectedStudents.filter(
+    (student) => !selectedAttendances.some((item) => item.studentId === student.id),
+  );
+  const isHoliday = holidays.includes(selectedDate);
+  const isFutureDate = selectedDate > todayKey;
+  return (
+    <section className="attendance-check-page">
+      <div className="attendance-check-controls">
+        <label className="dashboard-search">
+          <MagnifyingGlass size={19} />
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Cari nama murid..."
+          />
+        </label>
+        <label>
+          Tanggal Absen
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(event) => setSelectedDate(event.target.value)}
+          />
+        </label>
+        <label>
+          Kelas
+          <select value={selectedClass} onChange={(event) => setSelectedClass(event.target.value)}>
+            <option>Semua kelas</option>
+            {classOptions.map((className) => <option key={className}>{className}</option>)}
+          </select>
+        </label>
+      </div>
+      {isHoliday && <p className="report-holiday-note">Tanggal ini ditetapkan sebagai hari libur.</p>}
+      {isFutureDate && <p className="attendance-check-note">Absensi untuk tanggal mendatang belum tersedia.</p>}
+      <section className="unconfirmed-panel">
+        <div className="panel-title">
+          <div>
+            <h2>Murid Belum Absen</h2>
+            <p>Tandai status absensi untuk tanggal yang dipilih.</p>
+          </div>
+          <span>{unconfirmedStudents.length} murid</span>
+        </div>
+        {unconfirmedStudents.length ? (
+          <div className="unconfirmed-list">
+            {unconfirmedStudents.map((student, index) => (
+              <div key={student.id}>
+                <span className="person-initial attendance-number">{index + 1}</span>
+                <div>
+                  <strong>{student.name}</strong>
+                  <span>Kelas {student.className}</span>
+                </div>
+                <div className="unconfirmed-actions">
+                  <button
+                    className="mark-present-button"
+                    disabled={isHoliday || isFutureDate}
+                    onClick={() => onMarkStudentForDate(student, "Hadir", selectedDate)}
+                  >
+                    Tandai Hadir
+                  </button>
+                  {student.gender === "Perempuan" && (
+                    <button
+                      className="mark-present-button mark-haid-button"
+                      disabled={isHoliday || isFutureDate}
+                      onClick={() => onMarkStudentForDate(student, "Haid", selectedDate)}
+                    >
+                      Tandai Haid
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : <div className="empty">Semua murid sudah absen atau tidak ditemukan.</div>}
+      </section>
+      <section className="attendance-panel">
+        <div className="panel-title">
+          <div>
+            <h2>Sudah Absen</h2>
+            <p>Status absensi pada tanggal yang dipilih.</p>
+          </div>
+          <span>{selectedAttendances.length} konfirmasi</span>
+        </div>
+        {selectedAttendances.length ? (
+          <div className="attendance-list">
+            {selectedAttendances.map((item, index) => (
+              <div key={item.id}>
+                <span className="person-initial attendance-number">{index + 1}</span>
+                <div className="attendance-person">
+                  <strong>{item.studentName}</strong>
+                  <span className="attendance-class">Kelas {item.className}</span>
+                </div>
+                <div className="attendance-meta">
+                  <b className={item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
+                    {item.status || "Hadir"}
+                  </b>
+                  <time>{item.time}</time>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : <div className="empty">Belum ada murid yang absen pada tanggal ini.</div>}
+      </section>
     </section>
   );
 }

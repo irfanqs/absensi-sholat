@@ -26,6 +26,14 @@ create table if not exists public.holidays (
   created_at timestamptz not null default now()
 );
 
+create or replace function public.get_server_time()
+returns timestamptz
+language sql
+stable
+as $$ select now(); $$;
+
+grant execute on function public.get_server_time() to anon, authenticated;
+
 alter table public.students enable row level security;
 alter table public.attendances enable row level security;
 alter table public.holidays enable row level security;

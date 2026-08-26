@@ -262,15 +262,13 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .server-clock strong{color:var(--green-deep);font-size:16px;font-weight:400}
 .student-calendar-legend span{white-space:nowrap}
 .report-insight{margin-left:16px;margin-right:16px}
-.report-search{display:flex;align-items:center;gap:9px;margin:16px 20px 16px;padding:0 13px;height:46px;border:1px solid #cddbd2;border-radius:10px;background:#fff;color:var(--muted)}
-.report-search:focus-within{border-color:var(--green);box-shadow:0 0 0 3px rgba(23,107,69,.1)}
-.report-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--ink);font-size:14px}
-.report-search input::placeholder{color:#8b9b92}
-@media(max-width:680px){.report-search{margin:14px 14px 14px}}
-.report-unconfirmed{margin:0 20px 16px}
 .report-holiday-note{margin:0;padding:18px 20px;color:#806b22;background:#fff8d9;font-size:13px}
-@media(max-width:680px){.report-unconfirmed{margin:0 14px 14px}}
-.report-list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px 12px;border-top:1px solid var(--line)}
-.report-list-heading h2{margin:0;font-size:20px}
-.report-list-heading span{color:var(--muted);font-size:12px}
-@media(max-width:680px){.report-list-heading{padding:16px 14px 10px}.report-list-heading h2{font-size:18px}}
+.attendance-check-page{display:grid;gap:18px}
+.attendance-check-controls{display:grid;grid-template-columns:minmax(0,1fr) 190px 190px;align-items:end;gap:12px;padding:20px;background:#fff;border:1px solid var(--line);border-radius:16px}
+.attendance-check-controls>label:not(.dashboard-search){display:grid;gap:7px;color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.attendance-check-controls input,.attendance-check-controls select{min-height:46px;border:1px solid #cddbd2;border-radius:10px;padding:8px 10px;background:#fff;color:var(--ink);font-size:14px;text-transform:none;letter-spacing:0}
+.attendance-check-controls .dashboard-search{height:46px}
+.attendance-check-controls .dashboard-search input{min-height:0;border:0;border-radius:0;padding:0;background:transparent}
+.attendance-check-note{margin:0;padding:14px 16px;border:1px solid #f0d3a5;border-radius:10px;background:#fff8e9;color:#8a5a13;font-size:13px}
+.attendance-check-page .unconfirmed-panel,.attendance-check-page .attendance-panel{margin:0}
+@media(max-width:680px){.attendance-check-controls{grid-template-columns:1fr;padding:14px;border-radius:13px}.attendance-check-controls .dashboard-search{grid-row:1}.attendance-check-controls input,.attendance-check-controls select{width:100%;font-size:16px}.attendance-check-page{gap:14px}}
