@@ -833,8 +833,9 @@ export default function Home() {
            todayKey={todayKey}
           onConfirm={confirmPrayer}
            onHaid={recordMenstruation}
-           prayerSchedule={prayerSchedule}
-           attendanceNotice={attendanceNotice}
+            prayerSchedule={prayerSchedule}
+            attendanceNotice={attendanceNotice}
+            onDismissAttendanceNotice={() => setAttendanceNotice("")}
            onChangePassword={() => setPasswordModalOpen(true)}
           onLogout={() => {
             localStorage.removeItem("dzuhur-session");
@@ -1137,7 +1138,7 @@ function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
   );
 }
 
-function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid, attendanceNotice, onLogout, onChangePassword, prayerSchedule }) {
+function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid, attendanceNotice, onDismissAttendanceNotice, onLogout, onChangePassword, prayerSchedule }) {
   const [timeNotice, setTimeNotice] = useState(null);
   const [haidConfirmationOpen, setHaidConfirmationOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1200,7 +1201,7 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
             onChangePassword={onChangePassword}
             onOpenSettings={() => setSettingsOpen(true)}
             onLogout={onLogout}
-            disabled={Boolean(timeNotice || haidConfirmationOpen)}
+            disabled={Boolean(timeNotice || haidConfirmationOpen || attendanceNotice)}
           />
       </header>
       <section className="confirm-card">
@@ -1247,7 +1248,25 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
           Konfirmasi hanya dapat dilakukan satu kali setiap hari.
         </p>
       </section>
-      {attendanceNotice && <p className="student-error">{attendanceNotice}</p>}
+      {attendanceNotice && (
+        <div
+          className="modal-backdrop"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="attendance-error-title"
+        >
+          <section className="student-modal time-notice">
+            <WarningCircle size={32} weight="fill" />
+            <div>
+              <h2 id="attendance-error-title">Absensi gagal disimpan</h2>
+            </div>
+            <p>{attendanceNotice}</p>
+            <button className="primary" onClick={onDismissAttendanceNotice}>
+              Mengerti
+            </button>
+          </section>
+        </div>
+      )}
       {timeNotice && (
         <div
           className="modal-backdrop"
