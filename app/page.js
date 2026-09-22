@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import * as XLSX from "xlsx";
 import { supabase } from "../lib/supabase";
@@ -75,8 +75,10 @@ const initialStudents = [
   password: "123",
 }));
 
-const REMOTE_CACHE_KEY = "dzuhur-supabase-cache-v1";
-const REMOTE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const REMOTE_CACHE_KEY = "dzuhur-supabase-cache-v2";
+const REMOTE_CACHE_TTL_MS = 29 * 24 * 60 * 60 * 1000;
+const ATTENDANCE_COLUMNS =
+  "id,student_id,student_name,class_name,date,time,status";
 
 function createId() {
   return typeof crypto !== "undefined" && crypto.randomUUID
@@ -111,6 +113,64 @@ async function fetchAllSupabaseRows(table, columns = "*") {
     if (error) return { data: null, error };
     rows.push(...(data || []));
     if (!data || data.length < pageSize) return { data: rows, error: null };
+    page += 1;
+  }
+}
+
+async function fetchAttendanceRows({ startDate, endDate, studentId } = {}) {
+  const pageSize = 1000;
+  const rows = [];
+  let page = 0;
+  while (true) {
+    let query = supabase
+      .from("attendances")
+      .select(ATTENDANCE_COLUMNS)
+      .order("created_at", { ascending: false })
+      .range(page * pageSize, page * pageSize + pageSize - 1);
+    if (startDate) query = query.gte("date", startDate);
+    if (endDate) query = query.lte("date", endDate);
+    if (studentId) query = query.eq("student_id", String(studentId));
+    const { data, error } = await query;
+    if (error) return { data: null, error };
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) {
+      return { data: rows.map(mapAttendance), error: null };
+    }
+    page += 1;
+  }
+}
+
+async function fetchLatestSyncCursor() {
+  const { data, error } = await supabase
+    .from("sync_changes")
+    .select("id")
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return error ? 0 : Number(data?.id || 0);
+}
+
+async function fetchSyncChanges(source) {
+  const pageSize = 1000;
+  const changes = [];
+  let page = 0;
+  while (true) {
+    let query = supabase
+      .from("sync_changes")
+      .select("id,table_name,operation,record_id,record_date,student_id,row_data")
+      .gt("id", source.cursor || 0)
+      .order("id", { ascending: true })
+      .range(page * pageSize, page * pageSize + pageSize - 1);
+    if (source.tableName) query = query.eq("table_name", source.tableName);
+    if (source.recordId) query = query.eq("record_id", String(source.recordId));
+    if (source.recordDate) query = query.eq("record_date", source.recordDate);
+    if (source.startDate) query = query.gte("record_date", source.startDate);
+    if (source.endDate) query = query.lte("record_date", source.endDate);
+    if (source.studentId) query = query.eq("student_id", String(source.studentId));
+    const { data, error } = await query;
+    if (error) return { data: null, error };
+    changes.push(...(data || []));
+    if (!data || data.length < pageSize) return { data: changes, error: null };
     page += 1;
   }
 }
@@ -153,8 +213,9 @@ function readRemoteCache() {
     if (
       !cache ||
       !Number.isFinite(cache.snapshotAt) ||
+      !Number.isFinite(cache.cursors?.students) ||
+      !Number.isFinite(cache.cursors?.holidays) ||
       !Array.isArray(cache.students) ||
-      !Array.isArray(cache.attendances) ||
       !Array.isArray(cache.holidays)
     ) {
       return null;
@@ -328,6 +389,14 @@ function Logo() {
 export default function Home() {
   const [students, setStudents] = useState(supabase ? [] : initialStudents);
   const [attendances, setAttendances] = useState([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceSyncScope, setAttendanceSyncScope] = useState(null);
+  const [reportHistory, setReportHistory] = useState([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportSyncScope, setReportSyncScope] = useState(null);
+  const [attendanceCheckRecords, setAttendanceCheckRecords] = useState([]);
+  const [attendanceCheckLoading, setAttendanceCheckLoading] = useState(false);
+  const [attendanceCheckSyncScope, setAttendanceCheckSyncScope] = useState(null);
   const [serverNow, setServerNow] = useState(new Date());
   const [holidays, setHolidays] = useState([]);
   const [user, setUser] = useState(null);
@@ -345,20 +414,26 @@ export default function Home() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [prayerSchedule, setPrayerSchedule] = useState(defaultPrayerSchedule);
   const remoteSnapshotAt = useRef(0);
+  const cacheCursors = useRef({ students: 0, holidays: 0 });
+  const reportRequest = useRef(0);
+  const attendanceCheckRequest = useRef(0);
 
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
   }).format(serverNow);
+  const [attendanceCheckDate, setAttendanceCheckDate] = useState(todayKey);
 
   useEffect(() => {
     let active = true;
     async function loadData() {
+      const storedSession = localStorage.getItem("dzuhur-session");
+      if (storedSession) setUser(JSON.parse(storedSession));
       if (supabase) {
         const cache = readRemoteCache();
         if (cache) {
           remoteSnapshotAt.current = cache.snapshotAt;
+          cacheCursors.current = cache.cursors;
           setStudents(cache.students);
-          setAttendances(cache.attendances);
           setHolidays(cache.holidays);
         }
         const initialServerTime = await fetchServerTime();
@@ -366,19 +441,15 @@ export default function Home() {
         const cacheIsFresh =
           cache && Date.now() - cache.snapshotAt < REMOTE_CACHE_TTL_MS;
         if (!cacheIsFresh) {
-          const [studentsResult, attendancesResult, holidaysResult] = await Promise.all([
+          const cursor = await fetchLatestSyncCursor();
+          const [studentsResult, holidaysResult] = await Promise.all([
             fetchAllSupabaseRows(
               "students",
               "id,nis,name,class_name,gender,username,password",
             ),
-            fetchAllSupabaseRows(
-              "attendances",
-              "id,student_id,student_name,class_name,date,time,status",
-            ),
             fetchAllSupabaseRows("holidays", "date"),
           ]);
-          const hasError =
-            studentsResult.error || attendancesResult.error || holidaysResult.error;
+          const hasError = studentsResult.error || holidaysResult.error;
           if (hasError) {
             if (!cache) {
               setNotice(
@@ -387,9 +458,9 @@ export default function Home() {
             }
           } else {
             setStudents((studentsResult.data || []).map(mapStudent));
-            setAttendances((attendancesResult.data || []).map(mapAttendance));
             setHolidays((holidaysResult.data || []).map((item) => item.date));
             remoteSnapshotAt.current = Date.now();
+            cacheCursors.current = { students: cursor, holidays: cursor };
           }
         }
       } else {
@@ -400,8 +471,6 @@ export default function Home() {
         if (storedAttendances) setAttendances(JSON.parse(storedAttendances));
         if (storedHolidays) setHolidays(JSON.parse(storedHolidays));
       }
-      const storedSession = localStorage.getItem("dzuhur-session");
-      if (storedSession) setUser(JSON.parse(storedSession));
       const storedTeacherPassword = localStorage.getItem("dzuhur-teacher-password");
       if (storedTeacherPassword) setTeacherPassword(storedTeacherPassword);
       const storedPrayerSchedule = localStorage.getItem("dzuhur-prayer-schedule");
@@ -460,8 +529,8 @@ export default function Home() {
           REMOTE_CACHE_KEY,
           JSON.stringify({
             snapshotAt: remoteSnapshotAt.current,
+            cursors: cacheCursors.current,
             students,
-            attendances,
             holidays,
           }),
         );
@@ -470,48 +539,225 @@ export default function Home() {
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [students, attendances, holidays, ready]);
+  }, [students, holidays, ready]);
+  useEffect(() => {
+    if (!supabase || !ready || !user) return;
+    let active = true;
+    async function loadAttendanceScope() {
+      setAttendanceLoading(true);
+      const cursor = await fetchLatestSyncCursor();
+      const result =
+        user.role === "student"
+          ? await fetchAttendanceRows({ studentId: user.id })
+          : await fetchAttendanceRows({ startDate: todayKey, endDate: todayKey });
+      if (!active) return;
+      if (result.error) {
+        setNotice(`Gagal memuat absensi: ${result.error.message}`);
+      } else {
+        setAttendances(result.data || []);
+        setAttendanceSyncScope({
+          cursor,
+          key:
+            user.role === "student"
+              ? `student:${user.id}`
+              : `date:${todayKey}`,
+          studentId: user.role === "student" ? String(user.id) : null,
+          startDate: user.role === "admin" ? todayKey : null,
+          endDate: user.role === "admin" ? todayKey : null,
+        });
+      }
+      setAttendanceLoading(false);
+    }
+    loadAttendanceScope();
+    return () => {
+      active = false;
+    };
+  }, [ready, user?.role, user?.id, todayKey]);
   useEffect(() => {
     if (!supabase || !ready) return;
-    function syncStudent(payload) {
-      if (payload.eventType === "DELETE") {
-        setStudents((current) => current.filter((item) => item.id !== payload.old.id));
-        return;
-      }
-      const student = mapStudent(payload.new);
-      setStudents((current) => upsertById(current, student, payload.eventType === "INSERT"));
-    }
-    function syncAttendance(payload) {
-      if (payload.eventType === "DELETE") {
-        setAttendances((current) => current.filter((item) => item.id !== payload.old.id));
-        return;
-      }
-      const attendance = mapAttendance(payload.new);
-      setAttendances((current) =>
-        upsertById(current, attendance, payload.eventType === "INSERT"),
-      );
-    }
-    function syncHoliday(payload) {
-      const date = payload.eventType === "DELETE" ? payload.old.date : payload.new.date;
-      setHolidays((current) => {
-        if (payload.eventType === "DELETE") return current.filter((item) => item !== date);
-        return current.includes(date) ? current : [...current, date];
+    const sources = [];
+    const needsStudents =
+      !user ||
+      ["dashboard", "reports", "attendance-check", "students"].includes(view);
+    if (needsStudents) {
+      sources.push({
+        cursor: cacheCursors.current.students,
+        tableName: "students",
+        realtimeFilter: "table_name=eq.students",
       });
     }
-    const channel = supabase
-      .channel("absensi-sholat-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "students" }, syncStudent)
-      .on(
+    if (user?.role === "student" && attendanceSyncScope?.studentId) {
+      sources.push({
+        cursor: Math.min(
+          attendanceSyncScope.cursor,
+          cacheCursors.current.students,
+        ),
+        studentId: attendanceSyncScope.studentId,
+        realtimeFilter: `student_id=eq.${attendanceSyncScope.studentId}`,
+      });
+      sources.push({
+        cursor: cacheCursors.current.holidays,
+        tableName: "holidays",
+        realtimeFilter: "table_name=eq.holidays",
+      });
+    } else if (
+      user?.role === "admin" &&
+      view === "dashboard" &&
+      attendanceSyncScope?.startDate === todayKey
+    ) {
+      sources.push({
+        cursor: attendanceSyncScope.cursor,
+        recordDate: todayKey,
+        realtimeFilter: `record_date=eq.${todayKey}`,
+      });
+    } else if (user?.role === "admin" && view === "reports" && reportSyncScope) {
+      sources.push({
+        ...reportSyncScope,
+        realtimeFilter:
+          reportSyncScope.endDate < todayKey
+            ? `record_date=lte.${reportSyncScope.endDate}`
+            : `record_date=gte.${reportSyncScope.startDate}`,
+      });
+    } else if (
+      user?.role === "admin" &&
+      view === "attendance-check" &&
+      attendanceCheckSyncScope
+    ) {
+      sources.push({
+        ...attendanceCheckSyncScope,
+        realtimeFilter: `record_date=eq.${attendanceCheckSyncScope.recordDate}`,
+      });
+    }
+    if (
+      user?.role === "admin" &&
+      ["dashboard", "attendance-check"].includes(view)
+    ) {
+      sources.push({
+        cursor: cacheCursors.current.holidays,
+        tableName: "holidays",
+        realtimeFilter: "table_name=eq.holidays",
+      });
+    }
+    if (!sources.length) return;
+
+    let cancelled = false;
+    let catchingUp = true;
+    let queuedChanges = [];
+
+    function applyChange(change) {
+      const row = change.row_data;
+      const deleting = change.operation === "DELETE";
+      if (change.table_name === "students") {
+        if (user?.role !== "student") {
+          cacheCursors.current.students = Math.max(
+            cacheCursors.current.students,
+            Number(change.id),
+          );
+        }
+        if (deleting) {
+          setStudents((current) =>
+            current.filter((item) => String(item.id) !== String(change.record_id)),
+          );
+        } else {
+          const student = mapStudent(row);
+          setStudents((current) =>
+            upsertById(current, student, change.operation === "INSERT"),
+          );
+          setUser((current) => {
+            if (current?.role !== "student" || String(current.id) !== String(student.id)) {
+              return current;
+            }
+            const next = { ...student, role: "student" };
+            localStorage.setItem("dzuhur-session", JSON.stringify(next));
+            return next;
+          });
+        }
+        return;
+      }
+      if (change.table_name === "holidays") {
+        cacheCursors.current.holidays = Math.max(
+          cacheCursors.current.holidays,
+          Number(change.id),
+        );
+        const date = row.date;
+        setHolidays((current) => {
+          if (deleting) return current.filter((item) => item !== date);
+          return current.includes(date) ? current : [...current, date];
+        });
+        return;
+      }
+      if (change.table_name !== "attendances") return;
+      const record = mapAttendance(row);
+      const updateSlice = (current) =>
+        deleting
+          ? current.filter((item) => String(item.id) !== String(change.record_id))
+          : upsertById(current, record, change.operation === "INSERT");
+      if (
+        (user?.role === "student" && String(record.studentId) === String(user.id)) ||
+        (user?.role === "admin" && record.date === todayKey)
+      ) {
+        setAttendances(updateSlice);
+      }
+      if (
+        reportSyncScope &&
+        record.date >= reportSyncScope.startDate &&
+        record.date <= reportSyncScope.endDate
+      ) {
+        setReportHistory(updateSlice);
+      }
+      if (attendanceCheckSyncScope?.recordDate === record.date) {
+        setAttendanceCheckRecords(updateSlice);
+      }
+    }
+
+    let channel = supabase.channel(`absensi-sync-${Date.now()}`);
+    for (const source of sources) {
+      channel = channel.on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "attendances" },
-        syncAttendance,
-      )
-      .on("postgres_changes", { event: "*", schema: "public", table: "holidays" }, syncHoliday)
-      .subscribe();
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "sync_changes",
+          filter: source.realtimeFilter,
+        },
+        (payload) => {
+          if (catchingUp) queuedChanges.push(payload.new);
+          else applyChange(payload.new);
+        },
+      );
+    }
+    channel.subscribe(async (status) => {
+      if (status !== "SUBSCRIBED") return;
+      const results = await Promise.all(sources.map(fetchSyncChanges));
+      if (cancelled) return;
+      const replayed = results.flatMap((result) => result.data || []);
+      const changes = [...replayed, ...queuedChanges]
+        .filter(
+          (change, index, all) =>
+            all.findIndex((candidate) => candidate.id === change.id) === index,
+        )
+        .sort((first, second) => Number(first.id) - Number(second.id));
+      for (const change of changes) applyChange(change);
+      queuedChanges = [];
+      catchingUp = false;
+      if (results.some((result) => result.error)) {
+        setNotice("Sebagian perubahan terbaru gagal disinkronkan.");
+      }
+    });
     return () => {
+      cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [ready]);
+  }, [
+    ready,
+    user?.role,
+    user?.id,
+    view,
+    todayKey,
+    attendanceSyncScope,
+    reportSyncScope,
+    attendanceCheckSyncScope,
+  ]);
   useEffect(() => {
     if (!user || user.role !== "student") setMenstruationDecision(null);
   }, [user]);
@@ -533,6 +779,83 @@ export default function Home() {
         ),
     [students, classFilter, query],
   );
+
+  async function loadReportRange(startDate, endDate) {
+    if (!supabase) {
+      setReportHistory(
+        attendances.filter((item) => item.date >= startDate && item.date <= endDate),
+      );
+      return;
+    }
+    const requestId = ++reportRequest.current;
+    setReportLoading(true);
+    const cursor = await fetchLatestSyncCursor();
+    const result = await fetchAttendanceRows({ startDate, endDate });
+    if (requestId !== reportRequest.current) return;
+    if (result.error) {
+      setNotice(`Gagal memuat laporan: ${result.error.message}`);
+    } else {
+      setReportHistory(result.data || []);
+      setReportSyncScope({
+        cursor,
+        key: `report:${startDate}:${endDate}`,
+        startDate,
+        endDate,
+      });
+    }
+    setReportLoading(false);
+  }
+
+  async function loadAttendanceCheckDate(date) {
+    setAttendanceCheckDate(date);
+    if (!supabase) {
+      setAttendanceCheckRecords(attendances.filter((item) => item.date === date));
+      return;
+    }
+    const requestId = ++attendanceCheckRequest.current;
+    setAttendanceCheckLoading(true);
+    const cursor = await fetchLatestSyncCursor();
+    const result = await fetchAttendanceRows({ startDate: date, endDate: date });
+    if (requestId !== attendanceCheckRequest.current) return;
+    if (result.error) {
+      setNotice(`Gagal memuat pengecekan absensi: ${result.error.message}`);
+    } else {
+      setAttendanceCheckRecords(result.data || []);
+      setAttendanceCheckSyncScope({
+        cursor,
+        key: `check:${date}`,
+        recordDate: date,
+      });
+    }
+    setAttendanceCheckLoading(false);
+  }
+
+  function upsertAttendanceSlices(record) {
+    if (
+      (user?.role === "student" && String(record.studentId) === String(user.id)) ||
+      record.date === todayKey
+    ) {
+      setAttendances((current) => upsertById(current, record));
+    }
+    if (
+      reportSyncScope &&
+      record.date >= reportSyncScope.startDate &&
+      record.date <= reportSyncScope.endDate
+    ) {
+      setReportHistory((current) => upsertById(current, record));
+    }
+    if (attendanceCheckDate === record.date) {
+      setAttendanceCheckRecords((current) => upsertById(current, record));
+    }
+  }
+
+  function deleteAttendanceSlices(id) {
+    const remove = (current) =>
+      current.filter((record) => String(record.id) !== String(id));
+    setAttendances(remove);
+    setReportHistory(remove);
+    setAttendanceCheckRecords(remove);
+  }
 
   function login(event) {
     event.preventDefault();
@@ -628,7 +951,7 @@ export default function Home() {
       }
     }
     setAttendanceNotice("");
-    setAttendances((current) => upsertById(current, record));
+    upsertAttendanceSlices(record);
   }
 
   function confirmPrayer() {
@@ -669,7 +992,12 @@ export default function Home() {
       setNotice("Tanggal tersebut ditetapkan sebagai hari libur. Absensi tidak tersedia.");
       return;
     }
-    if (attendances.some((item) => item.studentId === student.id && item.date === date)) return;
+    if (
+      [...attendances, ...attendanceCheckRecords, ...reportHistory].some(
+        (item) => item.studentId === student.id && item.date === date,
+      )
+    )
+      return;
     const record = {
       id: createId(),
       studentId: student.id,
@@ -699,7 +1027,7 @@ export default function Home() {
       }
     }
     setNotice("");
-    setAttendances((current) => upsertById(current, record));
+    upsertAttendanceSlices(record);
   }
 
   async function markStudentPresent(student) {
@@ -736,7 +1064,7 @@ export default function Home() {
         return;
       }
     }
-    setAttendances((current) => upsertById(current, record));
+    upsertAttendanceSlices(record);
   }
 
   async function markStudentMenstruation(student) {
@@ -775,7 +1103,7 @@ export default function Home() {
       }
     }
     setNotice("");
-    setAttendances((current) => upsertById(current, record));
+    upsertAttendanceSlices(record);
   }
 
   async function saveStudent(event) {
@@ -846,7 +1174,7 @@ export default function Home() {
     if (!deleteTarget) return;
     const id = deleteTarget.id;
     if (supabase) await supabase.from("students").delete().eq("id", String(id));
-    setStudents(students.filter((item) => item.id !== id));
+    setStudents((current) => current.filter((item) => item.id !== id));
     setDeleteTarget(null);
   }
 
@@ -867,7 +1195,7 @@ export default function Home() {
         return;
       }
     }
-    setAttendances((current) => current.filter((record) => record.id !== id));
+    deleteAttendanceSlices(id);
     setAttendanceDeleteTarget(null);
   }
 
@@ -881,6 +1209,15 @@ export default function Home() {
       </main>
     );
   if (!user) return <Login notice={notice} onLogin={login} />;
+  if (attendanceLoading && (user.role === "student" || view === "dashboard"))
+    return (
+      <main className="session-loading">
+        <div>
+          <Logo />
+          <p>Memuat absensi terbaru</p>
+        </div>
+      </main>
+    );
   if (user.role === "student") {
     // Fitur spinwheel dinonaktifkan karena tidak digunakan lagi.
     return (
@@ -919,7 +1256,13 @@ export default function Home() {
        holidays={holidays}
        todayKey={todayKey}
        serverNow={serverNow}
-      history={attendances}
+      history={reportHistory}
+      reportLoading={reportLoading}
+      onReportRangeChange={loadReportRange}
+      attendanceCheckRecords={attendanceCheckRecords}
+      attendanceCheckDate={attendanceCheckDate}
+      attendanceCheckLoading={attendanceCheckLoading}
+      onAttendanceCheckDateChange={loadAttendanceCheckDate}
       view={view}
       setView={setView}
       query={query}
@@ -1475,6 +1818,12 @@ function AdminApp(props) {
     attendances,
     holidays,
     history,
+    reportLoading,
+    onReportRangeChange,
+    attendanceCheckRecords,
+    attendanceCheckDate,
+    attendanceCheckLoading,
+    onAttendanceCheckDateChange,
     view,
     setView,
     query,
@@ -1615,14 +1964,19 @@ function AdminApp(props) {
           <ReportPage
             students={students}
             history={history}
+            loading={reportLoading}
+            onRangeChange={onReportRangeChange}
           />
         )}
         {view === "attendance-check" && (
           <AttendanceCheckPage
             students={students}
-            history={history}
+            history={attendanceCheckRecords}
             holidays={holidays}
             todayKey={todayKey}
+            selectedDate={attendanceCheckDate}
+            loading={attendanceCheckLoading}
+            onDateChange={onAttendanceCheckDateChange}
             onMarkStudentForDate={onMarkStudentForDate}
             onCancelAttendance={onCancelAttendance}
           />
@@ -1931,7 +2285,7 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
     </>
   );
 }
-function ReportPage({ students, history }) {
+function ReportPage({ students, history, loading, onRangeChange }) {
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
   }).format(new Date());
@@ -1948,6 +2302,24 @@ function ReportPage({ students, history }) {
   const end = new Date(start);
   end.setDate(start.getDate() + 6);
   const month = selectedDate.slice(0, 7);
+  const rangeStart =
+    period === "daily"
+      ? selectedDate
+      : period === "weekly"
+        ? start.toISOString().slice(0, 10)
+        : `${month}-01`;
+  const rangeEnd =
+    period === "daily"
+      ? selectedDate
+      : period === "weekly"
+        ? end.toISOString().slice(0, 10)
+        : new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0)
+            .toISOString()
+            .slice(0, 10);
+  const requestRange = useEffectEvent(onRangeChange);
+  useEffect(() => {
+    requestRange(rangeStart, rangeEnd);
+  }, [rangeStart, rangeEnd]);
   const records = useMemo(() => {
     return history
       .filter((item) => {
@@ -2046,6 +2418,9 @@ function ReportPage({ students, history }) {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Rekap Dzuhur");
     XLSX.writeFile(workbook, `rekap-dzuhur-${selectedDate}.xlsx`);
+  }
+  if (loading) {
+    return <section className="report-panel empty">Memuat data laporan...</section>;
   }
   return (
     <section className="report-panel">
@@ -2187,10 +2562,13 @@ function ReportPage({ students, history }) {
   );
 }
 
-function AttendanceCheckPage({ students, history, holidays, todayKey, onMarkStudentForDate, onCancelAttendance }) {
-  const [selectedDate, setSelectedDate] = useState(todayKey);
+function AttendanceCheckPage({ students, history, holidays, todayKey, selectedDate, loading, onDateChange, onMarkStudentForDate, onCancelAttendance }) {
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const [searchQuery, setSearchQuery] = useState("");
+  const requestDate = useEffectEvent(onDateChange);
+  useEffect(() => {
+    requestDate(selectedDate);
+  }, []);
   const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
   const matchesSearch = (value) => value.toLowerCase().includes(searchQuery.toLowerCase());
   const selectedStudents = students.filter(
@@ -2211,6 +2589,9 @@ function AttendanceCheckPage({ students, history, holidays, todayKey, onMarkStud
   );
   const isHoliday = holidays.includes(selectedDate);
   const isFutureDate = selectedDate > todayKey;
+  if (loading) {
+    return <section className="attendance-check-page empty">Memuat data absensi...</section>;
+  }
   return (
     <section className="attendance-check-page">
       <div className="attendance-check-controls">
@@ -2227,7 +2608,7 @@ function AttendanceCheckPage({ students, history, holidays, todayKey, onMarkStud
           <input
             type="date"
             value={selectedDate}
-            onChange={(event) => setSelectedDate(event.target.value)}
+            onChange={(event) => onDateChange(event.target.value)}
           />
         </label>
         <label>
