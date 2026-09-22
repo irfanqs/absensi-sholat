@@ -75,6 +75,9 @@ const initialStudents = [
   password: "123",
 }));
 
+const REMOTE_CACHE_KEY = "dzuhur-supabase-cache-v1";
+const REMOTE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
 function createId() {
   return typeof crypto !== "undefined" && crypto.randomUUID
     ? crypto.randomUUID()
@@ -109,6 +112,57 @@ async function fetchAllSupabaseRows(table, columns = "*") {
     rows.push(...(data || []));
     if (!data || data.length < pageSize) return { data: rows, error: null };
     page += 1;
+  }
+}
+
+function mapStudent(item) {
+  return {
+    id: item.id,
+    nis: item.nis || "",
+    name: normalizeStudentName(item.name),
+    className: item.class_name,
+    gender: item.gender || "",
+    username: item.username,
+    password: item.password,
+  };
+}
+
+function mapAttendance(item) {
+  return {
+    id: item.id,
+    studentId: item.student_id,
+    studentName: item.student_name,
+    className: item.class_name,
+    date: item.date,
+    time: item.time,
+    status: item.status,
+  };
+}
+
+function upsertById(items, item, prepend = true) {
+  const index = items.findIndex((current) => current.id === item.id);
+  if (index < 0) return prepend ? [item, ...items] : [...items, item];
+  const next = [...items];
+  next[index] = item;
+  return next;
+}
+
+function readRemoteCache() {
+  try {
+    const cache = JSON.parse(localStorage.getItem(REMOTE_CACHE_KEY) || "null");
+    if (
+      !cache ||
+      !Number.isFinite(cache.snapshotAt) ||
+      !Array.isArray(cache.students) ||
+      !Array.isArray(cache.attendances) ||
+      !Array.isArray(cache.holidays)
+    ) {
+      return null;
+    }
+    return cache;
+  } catch {
+    localStorage.removeItem(REMOTE_CACHE_KEY);
+    return null;
   }
 }
 
@@ -290,6 +344,7 @@ export default function Home() {
   const [teacherPassword, setTeacherPassword] = useState("123");
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [prayerSchedule, setPrayerSchedule] = useState(defaultPrayerSchedule);
+  const remoteSnapshotAt = useRef(0);
 
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
@@ -299,54 +354,44 @@ export default function Home() {
     let active = true;
     async function loadData() {
       if (supabase) {
+        const cache = readRemoteCache();
+        if (cache) {
+          remoteSnapshotAt.current = cache.snapshotAt;
+          setStudents(cache.students);
+          setAttendances(cache.attendances);
+          setHolidays(cache.holidays);
+        }
         const initialServerTime = await fetchServerTime();
         if (initialServerTime) setServerNow(initialServerTime);
-        const [studentsResult, attendancesResult, holidaysResult] = await Promise.all([
-          fetchAllSupabaseRows("students"),
-          fetchAllSupabaseRows("attendances"),
-          fetchAllSupabaseRows("holidays"),
-        ]);
-        const remoteStudents = studentsResult.data;
-        const remoteAttendances = attendancesResult.data;
-        const studentsError = studentsResult.error;
-        const attendancesError = attendancesResult.error;
-        const holidaysError = holidaysResult.error;
-        if (studentsError || attendancesError || holidaysError)
-          setNotice(
-            "Database belum siap. Jalankan schema Supabase terlebih dahulu.",
-          );
-        if (remoteStudents?.length) {
-          const remote = remoteStudents.map((item) => ({
-            id: item.id,
-            nis: item.nis || "",
-            name: normalizeStudentName(item.name),
-            className: item.class_name,
-            gender: item.gender || "",
-            username: item.username,
-            password: item.password,
-          }));
-          setStudents(remote);
-        } else if (supabase) {
-          setStudents([]);
-        } else {
-          const localStudents = JSON.parse(
-            localStorage.getItem("dzuhur-students") || "[]",
-          );
-          if (localStudents.length) setStudents(localStudents);
+        const cacheIsFresh =
+          cache && Date.now() - cache.snapshotAt < REMOTE_CACHE_TTL_MS;
+        if (!cacheIsFresh) {
+          const [studentsResult, attendancesResult, holidaysResult] = await Promise.all([
+            fetchAllSupabaseRows(
+              "students",
+              "id,nis,name,class_name,gender,username,password",
+            ),
+            fetchAllSupabaseRows(
+              "attendances",
+              "id,student_id,student_name,class_name,date,time,status",
+            ),
+            fetchAllSupabaseRows("holidays", "date"),
+          ]);
+          const hasError =
+            studentsResult.error || attendancesResult.error || holidaysResult.error;
+          if (hasError) {
+            if (!cache) {
+              setNotice(
+                "Database belum siap. Jalankan schema Supabase terlebih dahulu.",
+              );
+            }
+          } else {
+            setStudents((studentsResult.data || []).map(mapStudent));
+            setAttendances((attendancesResult.data || []).map(mapAttendance));
+            setHolidays((holidaysResult.data || []).map((item) => item.date));
+            remoteSnapshotAt.current = Date.now();
+          }
         }
-        if (remoteAttendances)
-          setAttendances(
-            remoteAttendances.map((item) => ({
-              id: item.id,
-              studentId: item.student_id,
-              studentName: item.student_name,
-              className: item.class_name,
-              date: item.date,
-              time: item.time,
-              status: item.status,
-            })),
-          );
-        if (holidaysResult.data) setHolidays(holidaysResult.data.map((item) => item.date));
       } else {
         const storedStudents = localStorage.getItem("dzuhur-students");
         const storedAttendances = localStorage.getItem("dzuhur-attendances");
@@ -408,51 +453,65 @@ export default function Home() {
     if (!supabase) localStorage.setItem("dzuhur-holidays", JSON.stringify(holidays));
   }, [holidays, ready]);
   useEffect(() => {
-    if (!supabase) return;
-    async function refreshRemoteData() {
-      const [studentsResult, attendancesResult, holidaysResult] = await Promise.all([
-        fetchAllSupabaseRows("students"),
-        fetchAllSupabaseRows("attendances"),
-        fetchAllSupabaseRows("holidays"),
-      ]);
-      if (studentsResult.data) {
-        setStudents(
-          studentsResult.data.map((item) => ({
-            id: item.id,
-            nis: item.nis || "",
-            name: normalizeStudentName(item.name),
-            className: item.class_name,
-            gender: item.gender || "",
-            username: item.username,
-            password: item.password,
-          })),
+    if (!supabase || !ready) return;
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          REMOTE_CACHE_KEY,
+          JSON.stringify({
+            snapshotAt: remoteSnapshotAt.current,
+            students,
+            attendances,
+            holidays,
+          }),
         );
+      } catch {
+        localStorage.removeItem(REMOTE_CACHE_KEY);
       }
-      if (attendancesResult.data) {
-        setAttendances(
-          attendancesResult.data.map((item) => ({
-            id: item.id,
-            studentId: item.student_id,
-            studentName: item.student_name,
-            className: item.class_name,
-            date: item.date,
-            time: item.time,
-            status: item.status,
-          })),
-        );
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [students, attendances, holidays, ready]);
+  useEffect(() => {
+    if (!supabase || !ready) return;
+    function syncStudent(payload) {
+      if (payload.eventType === "DELETE") {
+        setStudents((current) => current.filter((item) => item.id !== payload.old.id));
+        return;
       }
-      if (holidaysResult.data) setHolidays(holidaysResult.data.map((item) => item.date));
+      const student = mapStudent(payload.new);
+      setStudents((current) => upsertById(current, student, payload.eventType === "INSERT"));
+    }
+    function syncAttendance(payload) {
+      if (payload.eventType === "DELETE") {
+        setAttendances((current) => current.filter((item) => item.id !== payload.old.id));
+        return;
+      }
+      const attendance = mapAttendance(payload.new);
+      setAttendances((current) =>
+        upsertById(current, attendance, payload.eventType === "INSERT"),
+      );
+    }
+    function syncHoliday(payload) {
+      const date = payload.eventType === "DELETE" ? payload.old.date : payload.new.date;
+      setHolidays((current) => {
+        if (payload.eventType === "DELETE") return current.filter((item) => item !== date);
+        return current.includes(date) ? current : [...current, date];
+      });
     }
     const channel = supabase
       .channel("absensi-sholat-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "students" }, refreshRemoteData)
-      .on("postgres_changes", { event: "*", schema: "public", table: "attendances" }, refreshRemoteData)
-      .on("postgres_changes", { event: "*", schema: "public", table: "holidays" }, refreshRemoteData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "students" }, syncStudent)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "attendances" },
+        syncAttendance,
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "holidays" }, syncHoliday)
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [ready]);
   useEffect(() => {
     if (!user || user.role !== "student") setMenstruationDecision(null);
   }, [user]);
@@ -569,7 +628,7 @@ export default function Home() {
       }
     }
     setAttendanceNotice("");
-    setAttendances((current) => [record, ...current]);
+    setAttendances((current) => upsertById(current, record));
   }
 
   function confirmPrayer() {
@@ -592,7 +651,11 @@ export default function Home() {
       }
     }
     setHolidays((current) =>
-      isHoliday ? current.filter((date) => date !== todayKey) : [...current, todayKey],
+      isHoliday
+        ? current.filter((date) => date !== todayKey)
+        : current.includes(todayKey)
+          ? current
+          : [...current, todayKey],
     );
     setNotice("");
   }
@@ -636,7 +699,7 @@ export default function Home() {
       }
     }
     setNotice("");
-    setAttendances((current) => [record, ...current]);
+    setAttendances((current) => upsertById(current, record));
   }
 
   async function markStudentPresent(student) {
@@ -673,7 +736,7 @@ export default function Home() {
         return;
       }
     }
-    setAttendances((current) => [record, ...current]);
+    setAttendances((current) => upsertById(current, record));
   }
 
   async function markStudentMenstruation(student) {
@@ -712,7 +775,7 @@ export default function Home() {
       }
     }
     setNotice("");
-    setAttendances((current) => [record, ...current]);
+    setAttendances((current) => upsertById(current, record));
   }
 
   async function saveStudent(event) {
@@ -771,11 +834,7 @@ export default function Home() {
         return;
       }
     }
-    setStudents(
-      isEditing
-        ? students.map((item) => (item.id === value.id ? value : item))
-        : [...students, value],
-    );
+    setStudents((current) => upsertById(current, value, false));
     setEditing(null);
   }
 
