@@ -116,6 +116,8 @@
 .student-error{max-width:570px;margin:18px auto 0;padding:12px 14px;border:1px solid #f2c9c3;border-radius:9px;background:#fdf1ef;color:#a52d25;line-height:1.5}
 .student-confirm-actions{display:grid;gap:10px;justify-items:center}
 .student-confirm-actions .large{width:min(100%,464px)}
+.student-footer{margin:24px auto 0;color:var(--muted);font-size:12px;text-align:center}
+.login-form input::placeholder{color:#8b9b92;font-weight:400;opacity:1}
 .status-badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800;line-height:1.2}
 .status-hadir{background:#e6f2ea;color:#176b45}
 .status-haid{background:#fbe4e3;color:#b23a35}

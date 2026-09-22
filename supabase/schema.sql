@@ -41,6 +41,7 @@ create or replace function public.get_server_time()
 returns timestamptz
 language sql
 stable
+set search_path = pg_catalog
 as $$ select now(); $$;
 
 grant execute on function public.get_server_time() to anon, authenticated;
@@ -141,6 +142,13 @@ end;
 $$;
 
 revoke execute on function public.capture_sync_change() from public, anon, authenticated;
+
+do $$
+begin
+  if to_regprocedure('public.rls_auto_enable()') is not null then
+    revoke execute on function public.rls_auto_enable() from public, anon, authenticated;
+  end if;
+end $$;
 
 drop trigger if exists students_sync_changes on public.students;
 create trigger students_sync_changes
