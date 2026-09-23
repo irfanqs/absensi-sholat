@@ -1650,7 +1650,7 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
           Konfirmasi hanya dapat dilakukan satu kali setiap hari.
         </p>
       </section>
-      <footer className="student-footer">© 2026. Created by irfanqs</footer>
+      <footer className="student-footer">© 2026. Created by @irfanqs</footer>
       {attendanceNotice && (
         <div
           className="modal-backdrop"
