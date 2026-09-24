@@ -402,6 +402,15 @@ function Logo() {
   );
 }
 
+function DatabaseLoading({ label }) {
+  return (
+    <div className="database-loading" role="status" aria-live="polite">
+      <span className="database-spinner" aria-hidden="true" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 export default function Home() {
   const [students, setStudents] = useState(supabase ? [] : initialStudents);
   const [attendances, setAttendances] = useState([]);
@@ -667,10 +676,7 @@ export default function Home() {
     } else if (user?.role === "admin" && view === "reports" && reportSyncScope) {
       sources.push({
         ...reportSyncScope,
-        realtimeFilter:
-          reportSyncScope.endDate < todayKey
-            ? `record_date=lte.${reportSyncScope.endDate}`
-            : `record_date=gte.${reportSyncScope.startDate}`,
+        realtimeFilter: `record_date=gte.${reportSyncScope.startDate},record_date=lte.${reportSyncScope.endDate}`,
       });
     } else if (
       user?.role === "admin" &&
@@ -1274,7 +1280,7 @@ export default function Home() {
       <main className="session-loading">
         <div>
           <Logo />
-          <p>Menyiapkan AbsensiSholat</p>
+          <DatabaseLoading label="Menyiapkan AbsensiSholat" />
         </div>
       </main>
     );
@@ -1284,7 +1290,7 @@ export default function Home() {
       <main className="session-loading">
         <div>
           <Logo />
-          <p>Memuat absensi terbaru</p>
+          <DatabaseLoading label="Memuat absensi terbaru" />
         </div>
       </main>
     );
@@ -2509,7 +2515,11 @@ function ReportPage({ students, history, loading, onRangeChange }) {
     XLSX.writeFile(workbook, `rekap-dzuhur-${selectedDate}.xlsx`);
   }
   if (loading) {
-    return <section className="report-panel empty">Memuat data laporan...</section>;
+    return (
+      <section className="report-panel empty">
+        <DatabaseLoading label="Memuat data laporan..." />
+      </section>
+    );
   }
   return (
     <section className="report-panel">
@@ -2679,7 +2689,11 @@ function AttendanceCheckPage({ students, history, holidays, todayKey, selectedDa
   const isHoliday = holidays.includes(selectedDate);
   const isFutureDate = selectedDate > todayKey;
   if (loading) {
-    return <section className="attendance-check-page empty">Memuat data absensi...</section>;
+    return (
+      <section className="attendance-check-page empty">
+        <DatabaseLoading label="Memuat data absensi..." />
+      </section>
+    );
   }
   return (
     <section className="attendance-check-page">
