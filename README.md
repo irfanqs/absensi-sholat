@@ -36,7 +36,9 @@ Aplikasi sudah memiliki client Supabase dan schema database di [supabase/schema.
 4. Isi `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 5. Tambahkan environment variable yang sama di Vercel.
 
-Schema juga mengaktifkan Realtime untuk tabel murid dan absensi, sehingga dashboard dapat menerima perubahan database tanpa refresh.
+Untuk database yang sudah memakai schema lama, jalankan `supabase/migrations/20260924000000_shared_prayer_schedule.sql` di SQL Editor project yang terhubung ke aplikasi sebelum memakai pengaturan jadwal. Migrasi ini membuat jadwal bersama dengan nilai awal 11:30–15:00 tanpa mengubah data absensi. Setelah migrasi, guru perlu menyimpan ulang jadwal jika sebelumnya pernah mengubahnya di browser; jadwal lama tersimpan hanya di `localStorage` browser guru dan tidak bisa dipindahkan otomatis dari database.
+
+Schema juga mengaktifkan Realtime untuk tabel murid, absensi, dan jadwal konfirmasi, sehingga perubahan dapat diterima tanpa refresh.
 
 Tanpa environment variable, aplikasi masih memakai `localStorage` sebagai fallback lokal. Schema saat ini memakai policy publik agar alur login demo lama tetap berjalan. Sebelum digunakan secara resmi, migrasikan login ke Supabase Auth dan ganti policy RLS agar data tidak dapat dibaca atau diubah publik.
 

@@ -232,6 +232,22 @@ async function fetchServerTime() {
   return error || !data ? null : new Date(data);
 }
 
+async function fetchPrayerSchedule() {
+  const { data, error } = await supabase
+    .from("prayer_schedule")
+    .select("enabled,start_time,end_time")
+    .eq("id", 1)
+    .single();
+  return {
+    schedule: data && {
+      enabled: data.enabled,
+      start: data.start_time.slice(0, 5),
+      end: data.end_time.slice(0, 5),
+    },
+    error,
+  };
+}
+
 function parseImportedRows(rows, existingStudents = []) {
   const headerIndex = rows.findIndex((row) =>
     row.some((cell) =>
@@ -413,6 +429,7 @@ export default function Home() {
   const [teacherPassword, setTeacherPassword] = useState("123");
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [prayerSchedule, setPrayerSchedule] = useState(defaultPrayerSchedule);
+  const [scheduleReady, setScheduleReady] = useState(!supabase);
   const remoteSnapshotAt = useRef(0);
   const cacheCursors = useRef({ students: 0, holidays: 0 });
   const reportRequest = useRef(0);
@@ -473,7 +490,7 @@ export default function Home() {
       }
       const storedTeacherPassword = localStorage.getItem("dzuhur-teacher-password");
       if (storedTeacherPassword) setTeacherPassword(storedTeacherPassword);
-      const storedPrayerSchedule = localStorage.getItem("dzuhur-prayer-schedule");
+      const storedPrayerSchedule = !supabase && localStorage.getItem("dzuhur-prayer-schedule");
       if (storedPrayerSchedule) {
         try {
           const parsedSchedule = JSON.parse(storedPrayerSchedule);
@@ -489,6 +506,43 @@ export default function Home() {
     loadData();
     return () => {
       active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    let requestId = 0;
+    async function loadSchedule() {
+      const id = ++requestId;
+      const result = await fetchPrayerSchedule();
+      if (!active || id !== requestId) return;
+      if (result.error || !result.schedule) {
+        setScheduleReady(false);
+        setNotice(`Gagal memuat jadwal konfirmasi: ${result.error?.message || "Jadwal tidak ditemukan."}`);
+      } else {
+        setPrayerSchedule(result.schedule);
+        setScheduleReady(true);
+        setNotice((current) => current.startsWith("Gagal memuat jadwal konfirmasi:") ? "" : current);
+      }
+    }
+    const channel = supabase
+      .channel("prayer-schedule-sync")
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "prayer_schedule",
+        filter: "id=eq.1",
+      }, loadSchedule)
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") loadSchedule();
+      });
+    const onFocus = () => loadSchedule();
+    window.addEventListener("focus", onFocus);
+    loadSchedule();
+    return () => {
+      active = false;
+      window.removeEventListener("focus", onFocus);
+      supabase.removeChannel(channel);
     };
   }, []);
   useEffect(() => {
@@ -906,9 +960,25 @@ export default function Home() {
     return "Password murid berhasil diubah.";
   }
 
-  function savePrayerSchedule(nextSchedule) {
+  async function savePrayerSchedule(nextSchedule) {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from("prayer_schedule")
+        .update({
+          enabled: nextSchedule.enabled,
+          start_time: nextSchedule.start,
+          end_time: nextSchedule.end,
+        })
+        .eq("id", 1)
+        .select("id")
+        .single();
+      if (error || !data) return `Gagal menyimpan jadwal: ${error?.message || "Jadwal tidak ditemukan."}`;
+    } else {
+      localStorage.setItem("dzuhur-prayer-schedule", JSON.stringify(nextSchedule));
+    }
     setPrayerSchedule(nextSchedule);
-    localStorage.setItem("dzuhur-prayer-schedule", JSON.stringify(nextSchedule));
+    setScheduleReady(true);
+    return null;
   }
 
   async function recordAttendance(status) {
@@ -1229,7 +1299,8 @@ export default function Home() {
            todayKey={todayKey}
           onConfirm={confirmPrayer}
            onHaid={recordMenstruation}
-            prayerSchedule={prayerSchedule}
+           prayerSchedule={prayerSchedule}
+           scheduleReady={scheduleReady}
             attendanceNotice={attendanceNotice}
             onDismissAttendanceNotice={() => setAttendanceNotice("")}
            onChangePassword={() => setPasswordModalOpen(true)}
@@ -1276,8 +1347,9 @@ export default function Home() {
        onSave={saveStudent}
        onDelete={requestDelete}
        onOpenPasswordChange={() => setPasswordModalOpen(true)}
-       prayerSchedule={prayerSchedule}
-       onSavePrayerSchedule={savePrayerSchedule}
+        prayerSchedule={prayerSchedule}
+        scheduleReady={scheduleReady}
+        onSavePrayerSchedule={savePrayerSchedule}
        onCancelAttendance={requestCancelAttendance}
        onMarkStudentPresent={markStudentPresent}
        onMarkStudentMenstruation={markStudentMenstruation}
@@ -1540,7 +1612,7 @@ function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
   );
 }
 
-function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid, attendanceNotice, onDismissAttendanceNotice, onLogout, onChangePassword, prayerSchedule }) {
+function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid, attendanceNotice, onDismissAttendanceNotice, onLogout, onChangePassword, prayerSchedule, scheduleReady }) {
   const [timeNotice, setTimeNotice] = useState(null);
   const [haidConfirmationOpen, setHaidConfirmationOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1548,33 +1620,47 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
   const recorded = attendances.find(
     (item) => item.studentId === user.id && item.date === todayKey,
   );
-  function validateConfirmationTime() {
-    if (!prayerSchedule.enabled) return true;
+  async function validateConfirmationTime() {
+    let schedule = prayerSchedule;
+    if (supabase) {
+      const result = await fetchPrayerSchedule();
+      if (result.error || !result.schedule) {
+        setTimeNotice({
+          title: "Jadwal belum tersedia",
+          message: "Gagal memuat jadwal terbaru. Coba lagi beberapa saat.",
+        });
+        return false;
+      }
+      schedule = result.schedule;
+    } else if (!scheduleReady) {
+      return false;
+    }
+    if (!schedule.enabled) return true;
     const minutes = jakartaMinutesNow();
-    const startMinutes = timeToMinutes(prayerSchedule.start);
-    const endMinutes = timeToMinutes(prayerSchedule.end);
+    const startMinutes = timeToMinutes(schedule.start);
+    const endMinutes = timeToMinutes(schedule.end);
     if (minutes < startMinutes) {
       setTimeNotice({
         title: "Konfirmasi belum dibuka",
-        message: `Konfirmasi sholat Dzuhur tersedia mulai pukul ${prayerSchedule.start.replace(":", ".")} WIB.`,
+        message: `Konfirmasi sholat Dzuhur tersedia mulai pukul ${schedule.start.replace(":", ".")} WIB.`,
       });
       return false;
     }
     if (minutes > endMinutes) {
       setTimeNotice({
         title: "Waktu konfirmasi sudah terlewat",
-        message: `Waktu konfirmasi berakhir pukul ${prayerSchedule.end.replace(":", ".")} WIB. Harap konfirmasi ke guru bila terjadi kesalahan.`,
+        message: `Waktu konfirmasi berakhir pukul ${schedule.end.replace(":", ".")} WIB. Harap konfirmasi ke guru bila terjadi kesalahan.`,
       });
       return false;
     }
     return true;
   }
-  function handleConfirmation() {
-    if (!validateConfirmationTime()) return;
+  async function handleConfirmation() {
+    if (!(await validateConfirmationTime())) return;
     onConfirm();
   }
-  function handleMenstruation() {
-    if (!validateConfirmationTime()) return;
+  async function handleMenstruation() {
+    if (!(await validateConfirmationTime())) return;
     setHaidConfirmationOpen(true);
   }
   function confirmMenstruation() {
@@ -1846,6 +1932,7 @@ function AdminApp(props) {
     todayKey,
     serverNow,
     prayerSchedule,
+    scheduleReady,
     onSavePrayerSchedule,
     onLogout,
   } = props;
@@ -2001,6 +2088,7 @@ function AdminApp(props) {
             onLogout={onLogout}
             onChangePassword={onOpenPasswordChange}
             prayerSchedule={prayerSchedule}
+            scheduleReady={scheduleReady}
             onSavePrayerSchedule={onSavePrayerSchedule}
             serverNow={serverNow}
           />
@@ -3048,22 +3136,28 @@ function QrPage() {
     </section>
   );
 }
-function SettingsPage({ onLogout, onChangePassword, prayerSchedule, onSavePrayerSchedule, serverNow }) {
+function SettingsPage({ onLogout, onChangePassword, prayerSchedule, scheduleReady, onSavePrayerSchedule, serverNow }) {
   const [draftSchedule, setDraftSchedule] = useState(prayerSchedule);
   const [scheduleNotice, setScheduleNotice] = useState("");
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   useEffect(() => {
     setDraftSchedule(prayerSchedule);
   }, [prayerSchedule]);
 
-  function saveSchedule(event) {
+  async function saveSchedule(event) {
     event.preventDefault();
     if (timeToMinutes(draftSchedule.start) >= timeToMinutes(draftSchedule.end)) {
       setScheduleNotice("Jam selesai harus lebih akhir dari jam mulai.");
       return;
     }
-    onSavePrayerSchedule(draftSchedule);
-    setScheduleNotice("Jadwal konfirmasi berhasil disimpan.");
+    setSavingSchedule(true);
+    try {
+      const error = await onSavePrayerSchedule(draftSchedule);
+      setScheduleNotice(error || "Jadwal konfirmasi berhasil disimpan.");
+    } finally {
+      setSavingSchedule(false);
+    }
   }
 
   return (
@@ -3121,8 +3215,8 @@ function SettingsPage({ onLogout, onChangePassword, prayerSchedule, onSavePrayer
           </label>
         </div>
         {scheduleNotice && <p className="schedule-notice">{scheduleNotice}</p>}
-        <button className="primary" type="submit">
-          Simpan jadwal
+        <button className="primary" type="submit" disabled={!scheduleReady || savingSchedule}>
+          {savingSchedule ? "Menyimpan..." : "Simpan jadwal"}
         </button>
       </form>
       <div className="settings-signout">
