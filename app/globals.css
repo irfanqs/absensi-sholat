@@ -121,6 +121,7 @@
 .login-form input::placeholder{color:#8b9b92;font-weight:400;opacity:1}
 .status-badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800;line-height:1.2}
 .status-hadir{background:#e6f2ea;color:#176b45}
+.status-late{background:#fff8d9;color:#806b22}
 .status-haid{background:#fbe4e3;color:#b23a35}
 .attendance-person{display:grid;gap:5px;min-width:0}
 .attendance-person .attendance-class{white-space:normal}
@@ -248,15 +249,18 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .calendar-nav{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--green-deep);font-size:25px;line-height:1;cursor:pointer}
 .student-calendar-weekdays,.student-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;background:#edf1ee}
 .student-calendar-weekdays span{padding:11px 4px;background:#f8fbf8;color:var(--muted);font-size:11px;font-weight:800;text-align:center;text-transform:uppercase}
-.calendar-day{min-height:72px;padding:9px 5px;background:#fff;color:var(--ink);font-size:14px;font-weight:700;text-align:center}
+.calendar-day{width:100%;min-height:72px;padding:9px 5px;background:#fff;color:var(--ink);font-size:14px;font-weight:700;text-align:center;border:0}
 .calendar-day small{display:block;margin-top:7px;font-size:10px;font-weight:800}
 .calendar-day-hadir{background:#eaf6ed;color:var(--green-deep)}
 .calendar-day-haid{background:#fff0ef;color:#b42318}
+.calendar-day-late{background:#fff8d9;color:#806b22}
+.calendar-day-clickable{cursor:pointer}.calendar-day-clickable:hover{background:#fafcfb}
+.calendar-day:disabled{cursor:default}
 .calendar-day-today{box-shadow:inset 0 0 0 2px var(--green)}
 .calendar-day-empty{background:#fafcfb}
 .student-calendar-legend{display:flex;flex-wrap:wrap;gap:14px;padding:14px 16px;color:var(--muted);font-size:12px}
 .student-calendar-legend span{display:inline-flex;align-items:center;gap:6px}
-.calendar-dot{width:10px;height:10px;border-radius:50%;background:#edf1ee}.calendar-dot-hadir{background:#b9d9c5}.calendar-dot-haid{background:#efb0aa}
+.calendar-dot{width:10px;height:10px;border-radius:50%;background:#edf1ee}.calendar-dot-hadir{background:#b9d9c5}.calendar-dot-late{background:#f2d77c}.calendar-dot-haid{background:#efb0aa}
 @media(max-width:680px){.student-settings-card{margin-top:28px;padding:22px 16px;border-radius:14px}.student-calendar{margin-top:22px}.calendar-day{min-height:64px;padding:8px 3px}.calendar-day small{font-size:9px;margin-top:6px}.student-calendar-legend{gap:10px;padding:12px;font-size:11px}}
 .student-calendar .calendar-day-holiday{background:#fff8d9;color:#806b22}
 .student-calendar .calendar-dot-holiday{background:#f2d77c}
@@ -295,7 +299,7 @@ select{-webkit-appearance:auto;appearance:auto;padding-right:44px!important;back
 .report-metric.report-metric-pending{background:#fff8d9;border-color:#f2d77c;color:var(--ink)}
 .ranking-highlight{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) auto;align-items:center;gap:12px;padding:16px;border:1px solid var(--line);border-radius:12px;background:#fff}
 .ranking-highlight div{display:grid;gap:5px;min-width:0}.ranking-highlight span{font-size:12px;color:var(--muted)}.ranking-highlight strong{font-size:15px;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ranking-highlight button{border:0;background:transparent;color:var(--green);font-weight:800;cursor:pointer;text-align:left}.ranking-highlight button:hover{text-decoration:underline}
-.ranking-list{margin:16px 20px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}.ranking-list>div{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;padding:13px 16px;border-top:1px solid #edf1ee}.ranking-list>div:first-child{border-top:0}.ranking-list strong{display:block}.ranking-list span{font-size:12px;color:var(--muted)}.ranking-list b{font-size:18px;color:var(--green-deep)}.ranking-modal{width:min(100%,760px);max-height:calc(100dvh - 42px);padding:0;overflow:hidden}.ranking-modal-head{display:flex;justify-content:space-between;gap:16px;padding:22px 24px;border-bottom:1px solid var(--line)}.ranking-modal-head h2{margin:0}.ranking-modal-head .muted{margin:6px 0 0}.ranking-modal-head button{border:0;background:var(--mint);color:var(--green-deep);width:38px;height:38px;border-radius:10px;display:grid;place-items:center;cursor:pointer;flex:none}.ranking-list-modal{margin:0;border:0;border-radius:0;max-height:60dvh;overflow:auto}
+.ranking-list{margin:16px 20px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}.ranking-list>div{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;padding:13px 16px;border-top:1px solid #edf1ee}.ranking-list>div:first-child{border-top:0}.ranking-list strong{display:block}.ranking-list span{font-size:12px;color:var(--muted)}.ranking-list b{font-size:18px;color:var(--green-deep)}.correction-modal{max-width:520px}.correction-modal .primary,.correction-modal .haid-button,.correction-modal .secondary{width:100%;justify-content:center}.ranking-modal{width:min(100%,760px);max-height:calc(100dvh - 42px);padding:0;overflow:hidden}.ranking-modal-head{display:flex;justify-content:space-between;gap:16px;padding:22px 24px;border-bottom:1px solid var(--line)}.ranking-modal-head h2{margin:0}.ranking-modal-head .muted{margin:6px 0 0}.ranking-modal-head button{border:0;background:var(--mint);color:var(--green-deep);width:38px;height:38px;border-radius:10px;display:grid;place-items:center;cursor:pointer;flex:none}.ranking-list-modal{margin:0;border:0;border-radius:0;max-height:60dvh;overflow:auto}
 .metric{align-content:start;gap:8px}
 .attendance-check-page .unconfirmed-list>div>div strong,.attendance-check-page .attendance-person strong{font-size:16px;line-height:1.2;font-weight:700}
 .attendance-check-page .unconfirmed-list>div>div span,.attendance-check-page .attendance-person .attendance-class{font-size:12px;font-weight:400;color:var(--muted)}

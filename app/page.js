@@ -1065,14 +1065,18 @@ export default function Home() {
     return null;
   }
 
-  async function recordAttendance(status) {
-    if (holidays.includes(todayKey)) {
-      setAttendanceNotice("Hari ini ditetapkan sebagai hari libur. Absensi tidak tersedia.");
+  async function recordAttendance(status, date = todayKey) {
+    if (date > todayKey) {
+      setAttendanceNotice("Absensi untuk tanggal mendatang belum tersedia.");
+      return;
+    }
+    if (holidays.includes(date)) {
+      setAttendanceNotice("Tanggal tersebut ditetapkan sebagai hari libur. Absensi tidak tersedia.");
       return;
     }
     if (
       attendances.some(
-        (item) => item.studentId === user.id && item.date === todayKey,
+        (item) => item.studentId === user.id && item.date === date,
       )
     )
       return;
@@ -1081,7 +1085,7 @@ export default function Home() {
       studentId: user.id,
       studentName: user.name,
       className: user.className,
-      date: todayKey,
+      date,
       time: new Intl.DateTimeFormat("id-ID", {
         hour: "2-digit",
         minute: "2-digit",
@@ -1112,8 +1116,12 @@ export default function Home() {
     return recordAttendance("Hadir");
   }
 
-  function recordMenstruation() {
-    return recordAttendance("Haid");
+  function recordMenstruation(date = todayKey) {
+    return recordAttendance("Haid", date);
+  }
+
+  function recordLateAttendance(date, status) {
+    return recordAttendance(status, date);
   }
 
   async function toggleHoliday() {
@@ -1383,6 +1391,7 @@ export default function Home() {
            todayKey={todayKey}
           onConfirm={confirmPrayer}
            onHaid={recordMenstruation}
+           onLateAttendance={recordLateAttendance}
            prayerSchedule={prayerSchedule}
            scheduleReady={scheduleReady}
             attendanceNotice={attendanceNotice}
@@ -1697,7 +1706,7 @@ function MenstruationPage({ user, onHaid, onContinue, onLogout }) {
   );
 }
 
-function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid, attendanceNotice, onDismissAttendanceNotice, onLogout, onChangePassword, prayerSchedule, scheduleReady }) {
+function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid, onLateAttendance, attendanceNotice, onDismissAttendanceNotice, onLogout, onChangePassword, prayerSchedule, scheduleReady }) {
   const [timeNotice, setTimeNotice] = useState(null);
   const [haidConfirmationOpen, setHaidConfirmationOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1761,6 +1770,9 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
         todayKey={todayKey}
         onBack={() => setSettingsOpen(false)}
         onChangePassword={onChangePassword}
+        onLateAttendance={onLateAttendance}
+        attendanceNotice={attendanceNotice}
+        onDismissAttendanceNotice={onDismissAttendanceNotice}
         onLogout={onLogout}
       />
     );
@@ -1894,11 +1906,13 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
   );
 }
 
-function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, onChangePassword, onLogout }) {
+function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, onChangePassword, onLateAttendance, attendanceNotice, onDismissAttendanceNotice, onLogout }) {
   const [month, setMonth] = useState(() => {
     const current = new Date(todayKey + "T12:00:00");
     return new Date(current.getFullYear(), current.getMonth(), 1);
   });
+  const [correctionDate, setCorrectionDate] = useState(null);
+  const [correctionMode, setCorrectionMode] = useState(null);
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
   const firstDay = (new Date(year, monthIndex, 1).getDay() + 6) % 7;
@@ -1917,6 +1931,21 @@ function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, on
   });
   function shiftMonth(amount) {
     setMonth(new Date(year, monthIndex + amount, 1));
+  }
+  function closeCorrectionModal() {
+    setCorrectionDate(null);
+    setCorrectionMode(null);
+  }
+  function submitCorrection(status) {
+    if (!correctionDate) return;
+    onLateAttendance(correctionDate, status);
+    closeCorrectionModal();
+  }
+  function recordLabel(record) {
+    if (!record) return "";
+    if (record.status === "Haid") return "Haid";
+    if (record.status === "Terlambat") return "Telat";
+    return "Hadir";
   }
   return (
     <main className="student-shell student-settings-shell">
@@ -1961,25 +1990,85 @@ function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, on
               const record = attendanceByDate.get(date);
               const isHoliday = holidays.includes(date);
               const isToday = date === todayKey;
+              const canCorrect = !record && !isHoliday && date < todayKey;
+              const statusClass = record
+                ? record.status === "Haid"
+                  ? "haid"
+                  : record.status === "Terlambat"
+                    ? "late"
+                    : "hadir"
+                : "";
               return (
-                <span
-                  className={`calendar-day${isToday ? " calendar-day-today" : ""}${isHoliday ? " calendar-day-holiday" : record ? ` calendar-day-${record.status === "Haid" ? "haid" : "hadir"}` : ""}`}
+                <button
+                  type="button"
+                  className={`calendar-day${isToday ? " calendar-day-today" : ""}${isHoliday ? " calendar-day-holiday" : statusClass ? ` calendar-day-${statusClass}` : ""}${canCorrect ? " calendar-day-clickable" : ""}`}
                   key={date}
+                  onClick={() => canCorrect && setCorrectionDate(date)}
+                  disabled={!canCorrect}
+                  aria-label={canCorrect ? `Perbaiki absensi tanggal ${day}` : undefined}
                 >
                   {day}
-                  {isHoliday ? <small>Libur</small> : record && <small>{record.status === "Haid" ? "Haid" : "Hadir"}</small>}
-                </span>
+                  {isHoliday ? <small>Libur</small> : record && <small>{recordLabel(record)}</small>}
+                </button>
               );
             })}
           </div>
           <div className="student-calendar-legend">
             <span><i className="calendar-dot calendar-dot-hadir" /> Hadir</span>
+            <span><i className="calendar-dot calendar-dot-late" /> Telat</span>
             <span><i className="calendar-dot calendar-dot-haid" /> Haid</span>
             <span><i className="calendar-dot calendar-dot-holiday" /> Libur</span>
             <span><i className="calendar-dot calendar-dot-empty" /> Belum tercatat</span>
           </div>
         </div>
       </section>
+      {correctionDate && (
+        <div className="modal-backdrop" role="presentation" onClick={closeCorrectionModal}>
+          <section
+            className="student-modal correction-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="correction-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {!correctionMode ? (
+              <>
+                <h2 id="correction-title">Perbaiki absensi?</h2>
+                <p className="muted">Apakah anda ingin memperbaiki absensi pada tanggal {new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }).format(new Date(`${correctionDate}T12:00:00`))}?</p>
+                <button className="primary" onClick={() => setCorrectionMode("late")}>Saya sudah sholat tapi lupa absen</button>
+                {user.gender === "Perempuan" && (
+                  <button className="haid-button" onClick={() => setCorrectionMode("haid")}>Saya sedang haid</button>
+                )}
+                <button className="secondary" onClick={closeCorrectionModal}>Batal</button>
+              </>
+            ) : (
+              <>
+                <WarningCircle size={32} weight="fill" />
+                <h2 id="correction-title">Konfirmasi absensi {correctionMode === "haid" ? "haid" : "terlambat"}</h2>
+                <p className="muted">
+                  {correctionMode === "haid"
+                    ? "Status haid akan disimpan untuk tanggal yang dipilih dan tidak dapat diisi ulang."
+                    : "Data absen sholat akan disimpan untuk tanggal yang dipilih, tetapi dinyatakan telat karena tidak diisi pada waktunya."}
+                </p>
+                <div className="modal-actions">
+                  <button className="secondary" onClick={() => setCorrectionMode(null)}>Tidak</button>
+                  <button className={correctionMode === "haid" ? "haid-button" : "primary"} onClick={() => submitCorrection(correctionMode === "haid" ? "Haid" : "Terlambat")}>Setuju</button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      )}
+      {attendanceNotice && (
+        <div className="modal-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="settings-attendance-error-title">
+          <section className="student-modal time-notice">
+            <WarningCircle size={32} weight="fill" />
+            <h2 id="settings-attendance-error-title">Absensi gagal disimpan</h2>
+            <p>{attendanceNotice}</p>
+            <button className="primary" onClick={onDismissAttendanceNotice}>Mengerti</button>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
@@ -2436,7 +2525,7 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
                   </span>
                 </div>
                 <div className="attendance-meta">
-                  <b className={item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
+                  <b className={item.status === "Haid" ? "status-badge status-haid" : item.status === "Terlambat" ? "status-badge status-late" : "status-badge status-hadir"}>
                     {item.status || "Hadir"}
                   </b>
                   <time>{item.time}</time>
@@ -2583,7 +2672,7 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
             if (!record) return "X";
             if (record.status === "Haid") return "H";
             total += 1;
-            return "✓";
+            return record.status === "Terlambat" ? "T" : "✓";
           }),
           total,
         ]);
@@ -2608,7 +2697,7 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
         "",
       ]);
       rows.push([]);
-      rows.push(["NB: ✓ = melaksanakan sholat dzuhur, H = haid, X = tidak/belum melaksanakan sholat dzuhur."]);
+      rows.push(["NB: ✓ = absen normal, T = absen terlambat, H = haid, X = tidak/belum melaksanakan sholat dzuhur."]);
 
       const worksheet = XLSX.utils.aoa_to_sheet(rows);
       const lastColumn = dates.length + 2;
@@ -2643,7 +2732,11 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
               wrapText: true,
             },
             font: { bold: row === tableStartRow || row > tableEndRow - 2 },
-            fill: row === tableStartRow ? { fgColor: { rgb: "E6E6E6" } } : undefined,
+            fill: row === tableStartRow
+              ? { fgColor: { rgb: "E6E6E6" } }
+              : rows[row]?.[col] === "T"
+                ? { fgColor: { rgb: "FFF2CC" } }
+                : undefined,
           };
         }
       }
@@ -2808,7 +2901,7 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
                   <strong>{item.studentName}</strong>
                    <span>
                      Kelas {item.className} ·{" "}
-                      <b className={item.pending ? "status-badge status-pending" : item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
+                      <b className={item.pending ? "status-badge status-pending" : item.status === "Haid" ? "status-badge status-haid" : item.status === "Terlambat" ? "status-badge status-late" : "status-badge status-hadir"}>
                        {item.status || "Hadir"}
                      </b>
                    </span>
@@ -2954,7 +3047,7 @@ function AttendanceCheckPage({ students, history, holidays, todayKey, selectedDa
                   <span className="attendance-class">Kelas {item.className}</span>
                 </div>
                 <div className="attendance-meta">
-                  <b className={item.status === "Haid" ? "status-badge status-haid" : "status-badge status-hadir"}>
+                  <b className={item.status === "Haid" ? "status-badge status-haid" : item.status === "Terlambat" ? "status-badge status-late" : "status-badge status-hadir"}>
                     {item.status || "Hadir"}
                   </b>
                   <time>{item.time}</time>
