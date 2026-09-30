@@ -13,9 +13,25 @@ Murid cukup login lalu memindai satu QR permanen yang ditempel di area sholat. Q
 - Dashboard guru dengan ringkasan dan daftar absensi hari ini.
 - Pengelolaan murid: tambah, edit, dan hapus.
 - QR dapat diunduh sebagai PNG untuk dicetak.
-- Rekap absensi harian, mingguan, dan bulanan untuk guru.
+- Rekap absensi bulanan per kelas untuk guru.
 - Tampilan responsif untuk HP.
 - Import murid dari Excel/CSV dengan halaman konfirmasi sebelum disimpan.
+
+## Tech stack
+
+| Teknologi | Versi | Keterangan |
+| --- | --- | --- |
+| Node.js | 22+ | Runtime lokal dan production |
+| Next.js | 16.3.0 | Framework aplikasi web |
+| React | 19.2.8 | UI library |
+| React DOM | 19.2.8 | Renderer React untuk browser |
+| Supabase JS | 2.112.3 | Client database dan Realtime Supabase |
+| qrcode.react | 4.2.0 | Generator QR permanen |
+| xlsx | 0.18.5 | Import dan export file Excel/CSV |
+| Phosphor Icons React | 2.1.10 | Ikon UI |
+| TypeScript | 6.0.3 | Tooling type/dependency Next.js |
+| ESLint | 9.39.5 | Linting |
+| eslint-config-next | 16.3.0 | Konfigurasi lint Next.js |
 
 ## Akun demo
 

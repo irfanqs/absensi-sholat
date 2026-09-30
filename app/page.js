@@ -2,7 +2,7 @@
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { supabase } from "../lib/supabase";
 import {
   ArrowLeft,
@@ -117,7 +117,7 @@ async function fetchAllSupabaseRows(table, columns = "*") {
   }
 }
 
-async function fetchAttendanceRows({ startDate, endDate, studentId } = {}) {
+async function fetchAttendanceRows({ startDate, endDate, studentId, className } = {}) {
   const pageSize = 1000;
   const rows = [];
   let page = 0;
@@ -130,6 +130,7 @@ async function fetchAttendanceRows({ startDate, endDate, studentId } = {}) {
     if (startDate) query = query.gte("date", startDate);
     if (endDate) query = query.lte("date", endDate);
     if (studentId) query = query.eq("student_id", String(studentId));
+    if (className && className !== "Semua kelas") query = query.eq("class_name", className);
     const { data, error } = await query;
     if (error) return { data: null, error };
     rows.push(...(data || []));
@@ -197,6 +198,64 @@ function mapAttendance(item) {
     time: item.time,
     status: item.status,
   };
+}
+
+function mapClassRanking(item) {
+  return {
+    className: item.class_name,
+    studentCount: Number(item.student_count || 0),
+    sholatCount: Number(item.sholat_count || 0),
+    haidCount: Number(item.haid_count || 0),
+    absentCount: Number(item.absent_count || 0),
+    expectedAttendance: Number(item.expected_attendance || 0),
+    percentage: Number(item.percentage || 0),
+  };
+}
+
+async function fetchMonthlyClassPrayerRanking({ monthStart, className }) {
+  const { data, error } = await supabase.rpc("get_monthly_class_prayer_ranking", {
+    p_month: monthStart,
+    p_class_name: className === "Semua kelas" ? null : className,
+  });
+  return { data: (data || []).map(mapClassRanking), error };
+}
+
+function buildMonthlyClassPrayerRanking(students, attendanceRows, startDate, endDate, className) {
+  const days = Math.round(
+    (new Date(`${endDate}T12:00:00`) - new Date(`${startDate}T12:00:00`)) / 86400000,
+  ) + 1;
+  const classNames = [...new Set(
+    students
+      .filter((student) => className === "Semua kelas" || student.className === className)
+      .map((student) => student.className)
+      .filter(Boolean),
+  )].sort();
+  return classNames
+    .map((currentClass) => {
+      const studentCount = students.filter((student) => student.className === currentClass).length;
+      const records = attendanceRows.filter(
+        (item) => item.className === currentClass && item.date >= startDate && item.date <= endDate,
+      );
+      const sholatCount = records.filter((item) => item.status !== "Haid").length;
+      const haidCount = records.filter((item) => item.status === "Haid").length;
+      const expectedAttendance = studentCount * days;
+      const absentCount = Math.max(expectedAttendance - records.length, 0);
+      return {
+        className: currentClass,
+        studentCount,
+        sholatCount,
+        haidCount,
+        absentCount,
+        expectedAttendance,
+        percentage: expectedAttendance ? Number(((sholatCount / expectedAttendance) * 100).toFixed(1)) : 0,
+      };
+    })
+    .sort(
+      (first, second) =>
+        second.percentage - first.percentage ||
+        second.sholatCount - first.sholatCount ||
+        first.className.localeCompare(second.className, "id", { numeric: true }),
+    );
 }
 
 function upsertById(items, item, prepend = true) {
@@ -417,6 +476,7 @@ export default function Home() {
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceSyncScope, setAttendanceSyncScope] = useState(null);
   const [reportHistory, setReportHistory] = useState([]);
+  const [reportClassRanking, setReportClassRanking] = useState([]);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportSyncScope, setReportSyncScope] = useState(null);
   const [attendanceCheckRecords, setAttendanceCheckRecords] = useState([]);
@@ -761,7 +821,8 @@ export default function Home() {
       if (
         reportSyncScope &&
         record.date >= reportSyncScope.startDate &&
-        record.date <= reportSyncScope.endDate
+        record.date <= reportSyncScope.endDate &&
+        (reportSyncScope.className === "Semua kelas" || record.className === reportSyncScope.className)
       ) {
         setReportHistory(updateSlice);
       }
@@ -840,27 +901,44 @@ export default function Home() {
     [students, classFilter, query],
   );
 
-  async function loadReportRange(startDate, endDate) {
+  async function loadReportRange(startDate, endDate, className = "Semua kelas") {
     if (!supabase) {
-      setReportHistory(
-        attendances.filter((item) => item.date >= startDate && item.date <= endDate),
+      const records = attendances.filter(
+        (item) =>
+          item.date >= startDate &&
+          item.date <= endDate &&
+          (className === "Semua kelas" || item.className === className),
       );
+      setReportHistory(records);
+      setReportClassRanking(buildMonthlyClassPrayerRanking(students, records, startDate, endDate, className));
       return;
     }
     const requestId = ++reportRequest.current;
     setReportLoading(true);
     const cursor = await fetchLatestSyncCursor();
-    const result = await fetchAttendanceRows({ startDate, endDate });
+    const [result, rankingResult] = await Promise.all([
+      fetchAttendanceRows({ startDate, endDate, className }),
+      fetchMonthlyClassPrayerRanking({ monthStart: startDate, className }),
+    ]);
     if (requestId !== reportRequest.current) return;
     if (result.error) {
       setNotice(`Gagal memuat laporan: ${result.error.message}`);
     } else {
-      setReportHistory(result.data || []);
+      const records = result.data || [];
+      const rpcMissing = rankingResult.error?.code === "PGRST202";
+      setReportHistory(records);
+      setReportClassRanking(
+        rankingResult.error
+          ? buildMonthlyClassPrayerRanking(students, records, startDate, endDate, className)
+          : rankingResult.data || [],
+      );
+      setNotice((current) => (rpcMissing && current.startsWith("Fungsi ranking") ? "" : current));
       setReportSyncScope({
         cursor,
-        key: `report:${startDate}:${endDate}`,
+        key: `report:${startDate}:${endDate}:${className}`,
         startDate,
         endDate,
+        className,
       });
     }
     setReportLoading(false);
@@ -1334,6 +1412,7 @@ export default function Home() {
        todayKey={todayKey}
        serverNow={serverNow}
       history={reportHistory}
+      reportClassRanking={reportClassRanking}
       reportLoading={reportLoading}
       onReportRangeChange={loadReportRange}
       attendanceCheckRecords={attendanceCheckRecords}
@@ -1911,6 +1990,7 @@ function AdminApp(props) {
     attendances,
     holidays,
     history,
+    reportClassRanking,
     reportLoading,
     onReportRangeChange,
     attendanceCheckRecords,
@@ -2058,6 +2138,7 @@ function AdminApp(props) {
           <ReportPage
             students={students}
             history={history}
+            classRanking={reportClassRanking}
             loading={reportLoading}
             onRangeChange={onReportRangeChange}
           />
@@ -2380,71 +2461,42 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
     </>
   );
 }
-function ReportPage({ students, history, loading, onRangeChange }) {
+function ReportPage({ students, history, classRanking, loading, onRangeChange }) {
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
   }).format(new Date());
-  const [period, setPeriod] = useState("daily");
-  const [selectedDate, setSelectedDate] = useState(today);
+  const [selectedMonth, setSelectedMonth] = useState(today.slice(0, 7));
   const [selectedClass, setSelectedClass] = useState("Semua kelas");
   const [reportFilter, setReportFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showRanking, setShowRanking] = useState(false);
   const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
-  const referenceDate = new Date(selectedDate + "T12:00:00");
-  const day = (referenceDate.getDay() + 6) % 7;
-  const start = new Date(referenceDate);
-  start.setDate(referenceDate.getDate() - day);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  const month = selectedDate.slice(0, 7);
-  const rangeStart =
-    period === "daily"
-      ? selectedDate
-      : period === "weekly"
-        ? start.toISOString().slice(0, 10)
-        : `${month}-01`;
-  const rangeEnd =
-    period === "daily"
-      ? selectedDate
-      : period === "weekly"
-        ? end.toISOString().slice(0, 10)
-        : new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0)
-            .toISOString()
-            .slice(0, 10);
+  const referenceDate = new Date(`${selectedMonth}-01T12:00:00`);
+  const rangeStart = `${selectedMonth}-01`;
+  const rangeEnd = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0)
+    .toISOString()
+    .slice(0, 10);
   const requestRange = useEffectEvent(onRangeChange);
   useEffect(() => {
-    requestRange(rangeStart, rangeEnd);
-  }, [rangeStart, rangeEnd]);
+    requestRange(rangeStart, rangeEnd, selectedClass);
+  }, [rangeStart, rangeEnd, selectedClass]);
   const records = useMemo(() => {
     return history
       .filter((item) => {
-        const inPeriod =
-          period === "daily"
-            ? item.date === selectedDate
-            : period === "weekly"
-              ? item.date >= start.toISOString().slice(0, 10) &&
-                item.date <= end.toISOString().slice(0, 10)
-              : item.date.startsWith(month);
         return (
-          inPeriod &&
+          item.date.startsWith(selectedMonth) &&
           (selectedClass === "Semua kelas" || item.className === selectedClass)
         );
       })
       .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
-  }, [history, period, selectedDate, selectedClass]);
+  }, [history, selectedMonth, selectedClass]);
   const selectedStudents = students.filter(
     (student) => selectedClass === "Semua kelas" || student.className === selectedClass,
   );
-  const periodDays = period === "daily"
-    ? 1
-    : period === "weekly"
-      ? 7
-      : new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0).getDate();
+  const periodDays = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0).getDate();
   const expectedAttendance = selectedStudents.length * periodDays;
   const periodDates = Array.from({ length: periodDays }, (_, index) => {
-    const date = period === "monthly"
-      ? new Date(referenceDate.getFullYear(), referenceDate.getMonth(), index + 1)
-      : new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
+    const date = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), index + 1);
     return date.toISOString().slice(0, 10);
   });
   const sholatRecords = records.filter((item) => item.status !== "Haid").length;
@@ -2459,15 +2511,6 @@ function ReportPage({ students, history, loading, onRangeChange }) {
   const reportPendingPercentage = expectedAttendance
     ? Number(((unrecordedAttendance / expectedAttendance) * 100).toFixed(1))
     : 0;
-  const weeklyRangeLabel = `${start.toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  })} hingga ${end.toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  })}`;
   const monthlyLabel = referenceDate.toLocaleDateString("id-ID", {
     month: "long",
     year: "numeric",
@@ -2500,19 +2543,121 @@ function ReportPage({ students, history, loading, onRangeChange }) {
       .toLowerCase()
       .includes(searchQuery.toLowerCase()),
   );
+  const rankedClasses = (classRanking || []).filter((item) =>
+    item.className.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+  const highestRanking = classRanking?.[0];
+  const lowestRanking = classRanking?.length ? classRanking[classRanking.length - 1] : null;
   function exportReport() {
-    const rows = records.map((item, index) => ({
-      No: index + 1,
-      Tanggal: item.date,
-      Waktu: item.time,
-      Nama: item.studentName,
-      Kelas: item.className,
-      Status: item.status || "Hadir",
-    }));
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const exportClasses = selectedClass === "Semua kelas" ? classOptions : [selectedClass];
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Rekap Dzuhur");
-    XLSX.writeFile(workbook, `rekap-dzuhur-${selectedDate}.xlsx`);
+    const periodLabel = monthlyLabel;
+    const title = "DAFTAR PELAKSANAAN SHOLAT DZUHUR";
+    const subtitle = "SISWA-SISWI SMAN 9 SEMARANG";
+
+    exportClasses.forEach((className) => {
+      const classStudents = students
+        .filter((student) => student.className === className)
+        .sort((first, second) => first.name.localeCompare(second.name, "id", { sensitivity: "base" }));
+      const dates = periodDates;
+      const attendanceByStudentDate = new Map(
+        history
+          .filter((item) => item.className === className && dates.includes(item.date))
+          .map((item) => [`${item.studentId}-${item.date}`, item]),
+      );
+      const rows = [
+        [title],
+        [subtitle],
+        [`PERIODE: ${periodLabel.toUpperCase()}`],
+        [`KELAS: ${className}`],
+        [],
+        ["NO", "NAMA", ...dates.map((date) => String(Number(date.slice(8, 10)))), "JUMLAH"],
+      ];
+      classStudents.forEach((student, index) => {
+        let total = 0;
+        rows.push([
+          index + 1,
+          student.name,
+          ...dates.map((date) => {
+            const record = attendanceByStudentDate.get(`${student.id}-${date}`);
+            if (!record) return "X";
+            if (record.status === "Haid") return "H";
+            total += 1;
+            return "✓";
+          }),
+          total,
+        ]);
+      });
+      rows.push([
+        "Jumlah",
+        "Sholat",
+        ...dates.map((date) =>
+          classStudents.filter((student) => {
+            const record = attendanceByStudentDate.get(`${student.id}-${date}`);
+            return record && record.status !== "Haid";
+          }).length,
+        ),
+        "",
+      ]);
+      rows.push([
+        "",
+        "Tidak Sholat",
+        ...dates.map((date) =>
+          classStudents.filter((student) => !attendanceByStudentDate.has(`${student.id}-${date}`)).length,
+        ),
+        "",
+      ]);
+      rows.push([]);
+      rows.push(["NB: ✓ = melaksanakan sholat dzuhur, H = haid, X = tidak/belum melaksanakan sholat dzuhur."]);
+
+      const worksheet = XLSX.utils.aoa_to_sheet(rows);
+      const lastColumn = dates.length + 2;
+      const tableStartRow = 5;
+      const tableEndRow = rows.length - 3;
+      const thinBorder = {
+        top: { style: "thin", color: { rgb: "000000" } },
+        right: { style: "thin", color: { rgb: "000000" } },
+        bottom: { style: "thin", color: { rgb: "000000" } },
+        left: { style: "thin", color: { rgb: "000000" } },
+      };
+      worksheet["!merges"] = [0, 1, 2, 3].map((row) => ({
+        s: { r: row, c: 0 },
+        e: { r: row, c: lastColumn },
+      }));
+      for (let row = 0; row <= 3; row += 1) {
+        const cellRef = XLSX.utils.encode_cell({ r: row, c: 0 });
+        worksheet[cellRef].s = {
+          font: { bold: true },
+          alignment: { horizontal: "center", vertical: "center" },
+        };
+      }
+      for (let row = tableStartRow; row <= tableEndRow; row += 1) {
+        for (let col = 0; col <= lastColumn; col += 1) {
+          const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
+          if (!worksheet[cellRef]) worksheet[cellRef] = { t: "s", v: "" };
+          worksheet[cellRef].s = {
+            border: thinBorder,
+            alignment: {
+              horizontal: col === 1 ? "left" : "center",
+              vertical: "center",
+              wrapText: true,
+            },
+            font: { bold: row === tableStartRow || row > tableEndRow - 2 },
+            fill: row === tableStartRow ? { fgColor: { rgb: "E6E6E6" } } : undefined,
+          };
+        }
+      }
+      worksheet["!cols"] = [
+        { wch: 5 },
+        { wch: 32 },
+        ...dates.map(() => ({ wch: 5 })),
+        { wch: 8 },
+      ];
+      XLSX.utils.book_append_sheet(workbook, worksheet, className.slice(0, 31));
+    });
+
+    const fileClass = selectedClass === "Semua kelas" ? "semua-kelas" : selectedClass.replace(/\s+/g, "-");
+    XLSX.writeFile(workbook, `rekap-dzuhur-${fileClass}-${rangeStart}-${rangeEnd}.xlsx`);
   }
   if (loading) {
     return (
@@ -2524,32 +2669,12 @@ function ReportPage({ students, history, loading, onRangeChange }) {
   return (
     <section className="report-panel">
       <div className="report-controls">
-        <div className="period-toggle">
-          <button
-            className={period === "daily" ? "active" : ""}
-            onClick={() => setPeriod("daily")}
-          >
-            Harian
-          </button>
-          <button
-            className={period === "weekly" ? "active" : ""}
-            onClick={() => setPeriod("weekly")}
-          >
-            Mingguan
-          </button>
-          <button
-            className={period === "monthly" ? "active" : ""}
-            onClick={() => setPeriod("monthly")}
-          >
-            Bulanan
-          </button>
-        </div>
         <label>
-          Tanggal acuan
+          Bulan rekap
           <input
-            type="date"
-            value={selectedDate}
-            onChange={(event) => setSelectedDate(event.target.value)}
+            type="month"
+            value={selectedMonth}
+            onChange={(event) => setSelectedMonth(event.target.value)}
           />
         </label>
         <label>
@@ -2566,16 +2691,12 @@ function ReportPage({ students, history, loading, onRangeChange }) {
         </label>
         <button className="secondary report-export" onClick={exportReport}>
           <DownloadSimple size={18} />
-          Export Excel
+          Download Rekap Per Kelas
         </button>
       </div>
       <div className="report-summary">
         <p>
-          {period === "daily"
-            ? "Jumlah murid pada tanggal terpilih berdasarkan status absensi."
-            : period === "weekly"
-              ? `Menampilkan data dari ${weeklyRangeLabel} berdasarkan status absensi.`
-              : `Menampilkan data bulan ${monthlyLabel} berdasarkan status absensi.`}
+          {`Rekap bulanan ${monthlyLabel}. Pilih kelas lalu download Excel dengan format tabel per tanggal.`}
         </p>
         <button
           className={`report-metric report-metric-sholat${reportFilter === "sholat" ? " active" : ""}`}
@@ -2598,6 +2719,19 @@ function ReportPage({ students, history, loading, onRangeChange }) {
           <span>Tidak sholat</span>
           <strong>{unrecordedAttendance}</strong>
         </button>
+        <div className="ranking-highlight">
+          <div>
+            <span>Kelas paling rajin sholat</span>
+            <strong>{highestRanking ? `${highestRanking.className} · ${highestRanking.percentage}%` : "-"}</strong>
+          </div>
+          <div>
+            <span>Kelas paling sering tidak sholat</span>
+            <strong>{lowestRanking ? `${lowestRanking.className} · ${lowestRanking.percentage}%` : "-"}</strong>
+          </div>
+          <button type="button" onClick={() => setShowRanking((current) => !current)}>
+            {showRanking ? "Tutup peringkat kelas" : "Lihat peringkat absensi sholat per kelas"}
+          </button>
+        </div>
       </div>
       <section className="dashboard-insight report-insight">
         <div
@@ -2627,6 +2761,44 @@ function ReportPage({ students, history, loading, onRangeChange }) {
           placeholder="Cari nama murid..."
         />
       </label>
+      {showRanking && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setShowRanking(false)}>
+          <section
+            className="student-modal ranking-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ranking-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="ranking-modal-head">
+              <div>
+                <p className="eyebrow">PERINGKAT KELAS</p>
+                <h2 id="ranking-title">Absensi sholat per kelas</h2>
+                <p className="muted">Periode {monthlyLabel}. Diurutkan dari persentase sholat tertinggi.</p>
+              </div>
+              <button type="button" onClick={() => setShowRanking(false)} aria-label="Tutup peringkat">
+                <X size={22} />
+              </button>
+            </div>
+            <div className="ranking-list ranking-list-modal">
+              {rankedClasses.length ? (
+                rankedClasses.map((item, index) => (
+                  <div key={item.className}>
+                    <span className="person-initial attendance-number">{index + 1}</span>
+                    <div>
+                      <strong>Kelas {item.className}</strong>
+                      <span>{item.studentCount} murid · {item.sholatCount} sholat · {item.absentCount} tidak sholat · {item.haidCount} haid</span>
+                    </div>
+                    <b>{item.percentage}%</b>
+                  </div>
+                ))
+              ) : (
+                <div className="empty">Belum ada data peringkat untuk filter ini.</div>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
       <div className="report-list">
         {searchedRecords.length ? (
           searchedRecords.map((item, index) => (
