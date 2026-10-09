@@ -37,3 +37,13 @@ on conflict (id) do update set password_hash=excluded.password_hash;
 Sistem login existing masih berbasis password teks biasa di browser, dan policy RLS lama membolehkan pengguna publik memperbarui data murid. Kode rahasia pergantian tahun hanya melindungi pemanggilan prosedur promosi; **belum** dapat melindungi semua perubahan siswa dari akses langsung ke Supabase. Sebelum digunakan di sekolah, migrasikan ke Supabase Auth dan RLS berbasis peran, termasuk membatasi akses ke data sensitif dan operasi massal.
 
 Fitur membutuhkan database Supabase, bukan fallback localStorage. Setelah memasang migrasi, lakukan pengujian login alumni, filter siswa, histori laporan, kenaikan kelas, dan format kelas. Tidak ada perubahan data production yang dilakukan oleh commit ini.
+
+## Status audit lanjutan (9 Oktober 2026)
+
+- Promosi sekarang memerlukan sesi **Supabase Auth** aktif dengan `app_metadata.role = 'admin'` yang diverifikasi database, selain kode konfirmasi. **Akun guru demo tidak dapat menjalankan promosi.** Ini sengaja fail-closed.
+- Trigger database menolak INSERT absensi siswa nonaktif, termasuk permintaan API langsung. Riwayat absensi lama tidak dihapus.
+- UI mengeluarkan sesi browser siswa yang telah diarsipkan setelah informasi status terbaru tersedia.
+- **BLOKER PRODUKSI:** RLS tabel `students` dan `attendances` dalam `supabase/schema.sql` masih membolehkan akses publik, termasuk pengubahan massal dan data password teks biasa. Jangan menganggap fitur aman untuk data siswa nyata sebelum autentikasi seluruh aplikasi dipindah ke Supabase Auth dan policy RLS ketat diterapkan.
+- **BLOKER PRODUKSI:** fungsi ranking bulanan saat ini bergantung pada daftar siswa aktif; histori jumlah siswa per bulan perlu dimodelkan ulang berdasarkan keanggotaan siswa per tahun ajaran agar persentase historis konsisten setelah promosi.
+- **BLOKER PRODUKSI:** nilai default tahun ajaran, input kelas yang tidak konsisten, rollback, backup/restore dan keseluruhan alur UI harus diuji pada database salinan.
+- Belum ada pengujian build otomatis atau end-to-end dalam PR ini. Jangan merge atau menjalankan migration pada database produksi.
