@@ -185,6 +185,7 @@ function mapStudent(item) {
     gender: item.gender || "",
     username: item.username,
     password: item.password,
+    isActive: item.is_active !== false,
   };
 }
 
@@ -493,6 +494,7 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [attendanceNotice, setAttendanceNotice] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [academicYear, setAcademicYear] = useState(null);
   const [attendanceDeleteTarget, setAttendanceDeleteTarget] = useState(null);
   const [menstruationDecision, setMenstruationDecision] = useState(null);
   const [teacherPassword, setTeacherPassword] = useState("123");
@@ -514,6 +516,7 @@ export default function Home() {
     async function loadData() {
       const storedSession = localStorage.getItem("dzuhur-session");
       if (storedSession) setUser(JSON.parse(storedSession));
+      if (supabase) { const {data} = await supabase.from("academic_year_state").select("current_year").eq("id",1).maybeSingle(); if(data) setAcademicYear(data.current_year); }
       if (supabase) {
         const cache = readRemoteCache();
         if (cache) {
@@ -531,7 +534,7 @@ export default function Home() {
           const [studentsResult, holidaysResult] = await Promise.all([
             fetchAllSupabaseRows(
               "students",
-              "id,nis,name,class_name,gender,username,password",
+              "id,nis,name,class_name,gender,username,password,is_active",
             ),
             fetchAllSupabaseRows("holidays", "date"),
           ]);
@@ -883,10 +886,11 @@ export default function Home() {
     if (!user || user.role !== "student") setMenstruationDecision(null);
   }, [user]);
 
+  const activeStudents = students.filter((s) => s.isActive !== false);
   const todayAttendance = attendances.filter((item) => item.date === todayKey);
   const filteredStudents = useMemo(
     () =>
-      students
+      activeStudents
         .filter(
           (student) =>
             (classFilter === "Semua kelas" ||
@@ -1009,7 +1013,7 @@ export default function Home() {
       return;
     }
     const student = students.find(
-      (item) => item.username === username && item.password === password,
+      (item) => item.isActive !== false && item.username === username && item.password === password,
     );
     if (student) {
       const session = { ...student, role: "student" };
@@ -1335,11 +1339,12 @@ export default function Home() {
   async function confirmDelete() {
     if (!deleteTarget) return;
     const id = deleteTarget.id;
-    if (supabase) await supabase.from("students").delete().eq("id", String(id));
-    setStudents((current) => current.filter((item) => item.id !== id));
+    if (supabase) {const {error}=await supabase.from("students").update({is_active:false,archived_at:new Date().toISOString()}).eq("id",String(id));if(error){setNotice(error.message);return;}}
+    setStudents((current) => current.map((item) => item.id === id ? {...item,isActive:false} : item));
     setDeleteTarget(null);
   }
 
+  async function transitionAcademicYear(year,code){if(!supabase)throw new Error("Supabase diperlukan");const {error}=await supabase.rpc("promote_academic_year",{p_new_year:year,p_admin_code:code});if(error)throw new Error(error.message);localStorage.removeItem(REMOTE_CACHE_KEY);window.location.reload();}
   function requestCancelAttendance(record) {
     setAttendanceDeleteTarget(record);
   }
@@ -1415,7 +1420,9 @@ export default function Home() {
   return (
     <>
       <AdminApp
-       students={students}
+        academicYear={academicYear}
+        onTransitionAcademicYear={transitionAcademicYear}
+       students={activeStudents}
        attendances={todayAttendance}
        holidays={holidays}
        todayKey={todayKey}
@@ -2073,9 +2080,28 @@ function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, on
   );
 }
 
+function AcademicYearPage({students,academicYear,onTransition}){
+const [code,setCode]=useState("");const [confirm,setConfirm]=useState("");const [error,setError]=useState("");const [busy,setBusy]=useState(false);
+const active=students.filter(s=>s.isActive!==false);
+const count=p=>active.filter(s=>new RegExp("^"+p+"(?:[- ].+)?$").test(s.className||"")).length;
+const x=count("X"),xi=count("XI"),xii=count("XII"),invalid=active.length-x-xi-xii;
+const start=academicYear?Number(academicYear.split("/")[0])+1:0;const next=start?start+"/"+(start+1):"";
+async function run(e){e.preventDefault();if(confirm!==next||!code||busy)return;setBusy(true);setError("");try{await onTransition(next,code);}catch(e){setError(e.message);setBusy(false);}}
+return <section className="students-panel" style={{padding:24}}><h2>Pergantian Tahun Ajaran SMA</h2>
+<p>Tahun aktif: {academicYear||"Belum disiapkan"}. Tahun berikutnya: {next||"-"}.</p>
+<p>{x} siswa X naik ke XI; {xi} siswa XI naik ke XII; {xii} siswa XII masuk arsip. Histori absensi tetap tersimpan.</p>
+{invalid>0&&<p role="alert">Ada {invalid} siswa dengan format kelas yang tidak cocok. Perbaiki sebelum melanjutkan.</p>}
+<form onSubmit={run} style={{display:"grid",gap:12,maxWidth:460}}>
+<label>Ketik {next} untuk konfirmasi</label><input value={confirm} onChange={e=>setConfirm(e.target.value)} autoComplete="off"/>
+<label>Kode rahasia pergantian tahun</label><input type="password" value={code} onChange={e=>setCode(e.target.value)} autoComplete="off"/>
+{error&&<p role="alert">{error}</p>}
+<button className="primary compact" disabled={!next||invalid>0||busy||confirm!==next||!code}>{busy?"Memproses...":"Jalankan pergantian tahun"}</button></form></section>;}
+
 function AdminApp(props) {
   const {
     students,
+    academicYear,
+    onTransitionAcademicYear,
     attendances,
     holidays,
     history,
@@ -2170,7 +2196,10 @@ function AdminApp(props) {
              Data Murid
           </NavButton>
           <NavButton
-            active={view === "qr"}
+            active={view === "academic-year"} onClick={() => selectView("academic-year")}
+            icon={<CalendarBlank size={20} />}>Tahun Ajaran</NavButton>
+          <NavButton
+            active={view === "academic-year" ? "Pergantian Tahun Ajaran" : view === "qr"}
             onClick={() => selectView("qr")}
             icon={<QrCode size={20} />}
           >
@@ -2250,6 +2279,7 @@ function AdminApp(props) {
             students={filteredStudents}
             allStudents={students}
             classOptions={classOptions}
+        {view === "academic-year" && <AcademicYearPage students={students} academicYear={academicYear} onTransition={onTransitionAcademicYear} />}
             query={query}
             setQuery={setQuery}
             classFilter={classFilter}
