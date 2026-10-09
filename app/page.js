@@ -886,6 +886,15 @@ export default function Home() {
     if (!user || user.role !== "student") setMenstruationDecision(null);
   }, [user]);
 
+  useEffect(() => {
+    if (user?.role !== "student" || !ready) return;
+    const current = students.find((student) => String(student.id) === String(user.id));
+    if (current?.isActive === false) {
+      localStorage.removeItem("dzuhur-session");
+      setUser(null);
+      setAttendanceNotice("Akun telah diarsipkan. Silakan hubungi guru.");
+    }
+  }, [students, user, ready]);
   const activeStudents = students.filter((s) => s.isActive !== false);
   const todayAttendance = attendances.filter((item) => item.date === todayKey);
   const filteredStudents = useMemo(
@@ -1344,7 +1353,19 @@ export default function Home() {
     setDeleteTarget(null);
   }
 
-  async function transitionAcademicYear(year,code){if(!supabase)throw new Error("Supabase diperlukan");const {error}=await supabase.rpc("promote_academic_year",{p_new_year:year,p_admin_code:code});if(error)throw new Error(error.message);localStorage.removeItem(REMOTE_CACHE_KEY);window.location.reload();}
+  async function transitionAcademicYear(year, code) {
+    if (!supabase) throw new Error("Supabase diperlukan.");
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData?.user || authData.user.app_metadata?.role !== "admin") {
+      throw new Error("Fitur terkunci: pengelola harus menyiapkan login Supabase Auth dengan peran admin. Login guru demo belum memenuhi syarat.");
+    }
+    const { error } = await supabase.rpc("promote_academic_year", {
+      p_new_year: year, p_admin_code: code
+    });
+    if (error) throw new Error(error.message);
+    localStorage.removeItem(REMOTE_CACHE_KEY);
+    window.location.reload();
+  }
   function requestCancelAttendance(record) {
     setAttendanceDeleteTarget(record);
   }
