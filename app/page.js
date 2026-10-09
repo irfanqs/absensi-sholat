@@ -2199,7 +2199,7 @@ function AdminApp(props) {
             active={view === "academic-year"} onClick={() => selectView("academic-year")}
             icon={<CalendarBlank size={20} />}>Tahun Ajaran</NavButton>
           <NavButton
-            active={view === "academic-year" ? "Pergantian Tahun Ajaran" : view === "qr"}
+            active={view === "qr"}
             onClick={() => selectView("qr")}
             icon={<QrCode size={20} />}
           >
@@ -2227,7 +2227,8 @@ function AdminApp(props) {
                     ? "Data Murid"
                     : view === "attendance-check"
                       ? "Cek Absensi"
-                      : view === "qr"
+                      : view === "academic-year" ? "Pergantian Tahun Ajaran"
+                  : view === "qr"
                         ? "QR Sholat Dzuhur"
                         : "Pengaturan"}
             </h1>
@@ -2279,7 +2280,6 @@ function AdminApp(props) {
             students={filteredStudents}
             allStudents={students}
             classOptions={classOptions}
-        {view === "academic-year" && <AcademicYearPage students={students} academicYear={academicYear} onTransition={onTransitionAcademicYear} />}
             query={query}
             setQuery={setQuery}
             classFilter={classFilter}
@@ -2288,6 +2288,7 @@ function AdminApp(props) {
             onDelete={onDelete}
           />
         )}
+        {view === "academic-year" && <AcademicYearPage students={students} academicYear={academicYear} onTransition={onTransitionAcademicYear} />}
         {view === "qr" && <QrPage />}
         {view === "settings" && (
           <SettingsPage
