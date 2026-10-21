@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { QRCodeCanvas } from "qrcode.react";
-import * as XLSX from "xlsx-js-style";
+import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabase";
 import {
   ArrowLeft,
@@ -25,6 +24,12 @@ import {
   UsersThree,
   WarningCircle,
 } from "@phosphor-icons/react";
+
+// Loaded on demand so students opening /dzuhur do not download admin-only libraries.
+const QRCodeCanvas = dynamic(
+  () => import("qrcode.react").then((mod) => mod.QRCodeCanvas),
+  { ssr: false },
+);
 
 const initialStudents = [
   ["Irfan Maulana", "9A", "9A_Irfan"],
@@ -2637,7 +2642,8 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
   );
   const highestRanking = classRanking?.[0];
   const lowestRanking = classRanking?.length ? classRanking[classRanking.length - 1] : null;
-  function exportReport() {
+  async function exportReport() {
+    const XLSX = await import("xlsx-js-style");
     const exportClasses = selectedClass === "Semua kelas" ? classOptions : [selectedClass];
     const workbook = XLSX.utils.book_new();
     const periodLabel = monthlyLabel;
@@ -3109,8 +3115,9 @@ function Students({
     event.target.value = "";
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (loadEvent) => {
+    reader.onload = async (loadEvent) => {
       try {
+        const XLSX = await import("xlsx-js-style");
         const workbook = XLSX.read(loadEvent.target.result, { type: "array" });
         const rows = XLSX.utils.sheet_to_json(
           workbook.Sheets[workbook.SheetNames[0]],
