@@ -203,7 +203,7 @@ if (!guruExists) {
   const guruPassword = randomBytes(18).toString("base64url");
   const { error } = await supabase.auth.admin.createUser({
     email: guruEmail,
-    password: guruPassword,
+    password: toAuthPassword(guruPassword),
     email_confirm: true,
     app_metadata: { role: "admin" },
   });
