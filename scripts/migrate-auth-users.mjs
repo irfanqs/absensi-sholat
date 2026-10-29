@@ -52,6 +52,14 @@ const supabase = createClient(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+// Postgres undefined_column (42703) naming the plaintext column itself.
+function isMissingColumn(error, column) {
+  return (
+    error.code === "42703" &&
+    new RegExp(`(^|[^a-z_])${column}([^a-z_]|$)`, "i").test(error.message ?? "")
+  );
+}
+
 async function readStudents() {
   for (const column of ["password", "password_legacy"]) {
     const rows = [];
@@ -63,7 +71,7 @@ async function readStudents() {
         .order("id")
         .range(from, from + PAGE - 1);
       if (error) {
-        if (from === 0 && /column|does not exist/i.test(error.message)) {
+        if (from === 0 && isMissingColumn(error, column)) {
           missingColumn = true;
           break;
         }
@@ -99,6 +107,9 @@ async function runPool(items, worker) {
 const students = await readStudents();
 const authByEmail = await readAuthUsers();
 
+const guruEmail = usernameToEmail(GURU_USERNAME);
+const guruExists = authByEmail.has(guruEmail);
+
 const counts = { dibuat: 0, ditautkan: 0, disinkron: 0 };
 const failures = [];
 const toCreate = [];
@@ -111,6 +122,10 @@ for (const student of students) {
     email = usernameToEmail(student.username);
   } catch (e) {
     failures.push({ username: student.username, message: e.message });
+    continue;
+  }
+  if (email === guruEmail) {
+    failures.push({ username: student.username, message: "Username guru dicadangkan untuk akun admin." });
     continue;
   }
   if (typeof student.plain !== "string" || student.plain === "") {
@@ -126,8 +141,6 @@ for (const student of students) {
   }
 }
 
-const guruEmail = usernameToEmail(GURU_USERNAME);
-const guruExists = authByEmail.has(guruEmail);
 
 if (dryRun) {
   console.log(`[dry-run] ref: ${projectRef}`);
