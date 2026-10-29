@@ -1,0 +1,26 @@
+# Checklist uji manual di browser
+
+Langkah yang hanya bisa diuji di browser. Jalankan terhadap staging (`scripts/staging.sh run npx next dev -p 3001`, dengan `NODE_OPTIONS=--experimental-websocket` di Node 20) atau di Preview sebelum rilis. Centang setiap langkah yang hasilnya sesuai.
+
+## Task 7 — login dan sesi
+
+Catatan staging: password `9A_Ahmad` di staging adalah `456` (diubah saat uji Task 5), siswa lain `123`. Password guru staging ada di file `staging-guru-password` milik implementer.
+
+- [ ] **Tidak ada data siswa sebelum login.** Buka DevTools > Network, kosongkan `localStorage`, muat ulang halaman login. Hasil: tidak ada request ke `/rest/v1/students`, `/rest/v1/holidays`, `/rest/v1/prayer_schedule`, `/rest/v1/sync_changes`, dan tidak ada WebSocket realtime. Request yang boleh ada hanya `/rest/v1/rpc/get_server_time`.
+- [ ] **Login siswa.** Login `9A_Irfan` / `123`. Hasil: halaman siswa atas nama Irfan Maulana. Logout, lalu login ` 9a_irfan ` (spasi di depan dan belakang, huruf kecil) / `123`. Hasil: halaman siswa yang sama.
+- [ ] **Password salah.** Login `9A_Irfan` / `salah`. Hasil: tetap di halaman login dengan pesan `Username atau password belum sesuai.`; tombol sempat menampilkan `Memproses...` lalu aktif lagi.
+- [ ] **Tidak ada password di browser.** Setelah login siswa, periksa DevTools > Application > Local Storage. Hasil: tidak ada `dzuhur-session`; sesi hanya ada di kunci `sb-<ref>-auth-token`; tidak ada password siswa di mana pun.
+- [ ] **Sesi admin lama dibuang.** Logout. Di Console jalankan `localStorage.setItem("dzuhur-session", '{"role":"admin","name":"x"}')`, lalu muat ulang. Hasil: halaman login, kunci `dzuhur-session` sudah terhapus.
+- [ ] **Sesi siswa lama dimigrasikan.** Logout. Di Console isi semua kunci lama: `dzuhur-session` = `{"role":"student","username":"9A_Ahmad","password":"456","name":"Ahmad Fauzi"}` (di production: password siswa yang sebenarnya), serta `dzuhur-teacher-password`, `dzuhur-supabase-cache-v2`, `dzuhur-students`, `dzuhur-attendances`, `dzuhur-holidays`, `dzuhur-prayer-schedule` dengan nilai apa saja. Pastikan tidak ada kunci `sb-…-auth-token`, lalu muat ulang. Hasil: langsung masuk sebagai Ahmad Fauzi tanpa form login; ketujuh kunci lama terhapus.
+- [ ] **Sesi siswa lama dengan password salah.** Ulangi langkah sebelumnya dengan `"password":"salah"`. Hasil: halaman login tanpa pesan error; ketujuh kunci lama terhapus.
+- [ ] **Sesi bertahan setelah reload.** Login sebagai siswa, muat ulang halaman, tutup lalu buka lagi tab. Hasil: tetap masuk tanpa login ulang.
+- [ ] **Login guru.** Login `guru` / password guru. Hasil: dashboard guru dengan daftar murid terisi; `dzuhur-admin-last-active` berisi waktu sekarang (milidetik).
+- [ ] **Ganti password guru.** Pengaturan > Ganti password. Isi password saat ini yang salah. Hasil: pesan `Password saat ini tidak sesuai.` dan tetap login. Ulangi dengan password yang benar dan password baru. Hasil: modal tertutup. Logout, login dengan password lama → `Username atau password belum sesuai.`; login dengan password baru → dashboard. Kembalikan password guru ke nilai semula dengan cara yang sama.
+- [ ] **Ganti password siswa.** Login sebagai siswa, ganti password `123` → `abc123`, logout, login dengan `abc123` → berhasil, `123` → gagal. Kembalikan ke `123`.
+- [ ] **Logout membersihkan data.** Login guru, logout. Hasil: halaman login; `localStorage` tidak lagi berisi `dzuhur-admin-last-active`, `dzuhur-cache-v3`, `dzuhur-supabase-cache-v2`, maupun `sb-…-auth-token`.
+- [ ] **Siswa dinonaktifkan saat masih login.** Login siswa uji di browser A. Nonaktifkan siswa itu lewat `DELETE /api/admin/students/<id>` dengan token guru. Muat ulang browser A. Hasil: halaman login dengan pesan `Akun siswa tidak ditemukan atau nonaktif.` (selama access token masih berlaku, profil ditolak RLS/`is_active`). Jika access token sudah kedaluwarsa dan refresh ditolak, hasilnya halaman login (tanpa pesan bila terjadi saat reload; `Sesi berakhir. Silakan masuk kembali.` bila terjadi saat app terbuka). Aktifkan kembali siswa uji setelahnya.
+- [ ] **Logout di tab lain.** Buka app di dua tab dengan akun yang sama, logout di tab pertama. Hasil: tab kedua kembali ke halaman login dengan pesan `Sesi berakhir. Silakan masuk kembali.`, tidak blank.
+- [ ] **Timeout guru 7 hari.** Login guru. Di Console jalankan `localStorage.setItem("dzuhur-admin-last-active", String(Date.now() - 8 * 24 * 60 * 60 * 1000))`, lalu muat ulang. Hasil: halaman login dengan pesan `Sesi guru berakhir karena tidak aktif lebih dari 7 hari. Silakan masuk kembali.`; sesi Supabase terhapus.
+- [ ] **Timeout guru saat tab terbuka.** Login guru, set nilai yang sama tanpa reload, lalu klik di mana saja. Hasil: kembali ke halaman login dengan pesan timeout yang sama.
+- [ ] **Aktivitas memperbarui penanda.** Login guru, catat nilai `dzuhur-admin-last-active`, tunggu lebih dari 1 menit, klik atau ketik. Hasil: nilainya bertambah. Klik berulang dalam 1 menit tidak mengubah nilai.
+- [ ] **Konfigurasi hilang.** Jalankan `next dev` tanpa `NEXT_PUBLIC_SUPABASE_URL`. Hasil: halaman menampilkan `Aplikasi belum terhubung ke database. Hubungi admin sekolah untuk mengatur konfigurasi Supabase.`, bukan mode demo.

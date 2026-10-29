@@ -4,6 +4,14 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabase";
 import {
+  ADMIN_ACTIVITY_KEY,
+  LEGACY_STORAGE_KEYS,
+  isAdminSessionExpired,
+  migrateLegacySession,
+  signInWithUsername,
+} from "../lib/auth";
+import { changeOwnPassword, fetchOwnStudentProfile } from "../lib/api";
+import {
   ArrowLeft,
   BookOpen,
   CalendarBlank,
@@ -31,59 +39,18 @@ const QRCodeCanvas = dynamic(
   { ssr: false },
 );
 
-const initialStudents = [
-  ["Irfan Maulana", "9A", "9A_Irfan"],
-  ["Ahmad Fauzi", "9A", "9A_Ahmad"],
-  ["Bima Pratama", "9A", "9A_Bima"],
-  ["Dimas Saputra", "9A", "9A_Dimas"],
-  ["Fajar Ramadhan", "9A", "9A_Fajar"],
-  ["Rizky Kurniawan", "9A", "9A_Rizky"],
-  ["Ardiansyah Putra", "9A", "9A_Ardi"],
-  ["Ilham Nugraha", "9A", "9A_Ilham"],
-  ["Rafi Akbar", "9A", "9A_Rafi"],
-  ["Yusuf Hidayat", "9A", "9A_Yusuf"],
-  ["Andi Prasetyo", "9B", "9B_Andi"],
-  ["Bagus Setiawan", "9B", "9B_Bagus"],
-  ["Cahyo Prabowo", "9B", "9B_Cahyo"],
-  ["Deni Kurnia", "9B", "9B_Deni"],
-  ["Eko Saputro", "9B", "9B_Eko"],
-  ["Galih Prakoso", "9B", "9B_Galih"],
-  ["Hendra Wijaya", "9B", "9B_Hendra"],
-  ["Joko Santoso", "9B", "9B_Joko"],
-  ["Lukman Hakim", "9B", "9B_Lukman"],
-  ["Nanda Pratama", "9B", "9B_Nanda"],
-  ["Alya Nurfadilah", "9C", "9C_Alya"],
-  ["Aisyah Rahmawati", "9C", "9C_Aisyah"],
-  ["Citra Lestari", "9C", "9C_Citra"],
-  ["Dinda Ayu Permata", "9C", "9C_Dinda"],
-  ["Fitri Handayani", "9C", "9C_Fitri"],
-  ["Ghina Azzahra", "9C", "9C_Ghina"],
-  ["Hana Safitri", "9C", "9C_Hana"],
-  ["Intan Sari", "9C", "9C_Intan"],
-  ["Karina Putri", "9C", "9C_Karina"],
-  ["Nabila Zahra", "9C", "9C_Nabila"],
-  ["Aditya Pratama", "9D", "9D_Aditya"],
-  ["Bayu Firmansyah", "9D", "9D_Bayu"],
-  ["Daffa Alfarizi", "9D", "9D_Daffa"],
-  ["Fikri Ramadhan", "9D", "9D_Fikri"],
-  ["Hafiz Maulana", "9D", "9D_Hafiz"],
-  ["Kevin Pratama", "9D", "9D_Kevin"],
-  ["Muhammad Farhan", "9D", "9D_Muhammad"],
-  ["Rangga Saputra", "9D", "9D_Rangga"],
-  ["Satria Wibowo", "9D", "9D_Satria"],
-  ["Zidan Alamsyah", "9D", "9D_Zidan"],
-].map(([name, className, username], index) => ({
-  id: index + 1,
-  name,
-  className,
-  username,
-  password: "123",
-}));
-
 const REMOTE_CACHE_KEY = "dzuhur-supabase-cache-v2";
 const REMOTE_CACHE_TTL_MS = 29 * 24 * 60 * 60 * 1000;
 const ATTENDANCE_COLUMNS =
   "id,student_id,student_name,class_name,date,time,status";
+const STUDENT_COLUMNS = "id,nis,name,class_name,gender,username,is_active";
+const ADMIN_CACHE_KEY = "dzuhur-cache-v3";
+const ADMIN_USER = { role: "admin", name: "Guru Admin", username: "guru" };
+const E_NO_STUDENT = "Akun siswa tidak ditemukan atau nonaktif.";
+const E_SESSION_ENDED = "Sesi berakhir. Silakan masuk kembali.";
+const E_ADMIN_IDLE =
+  "Sesi guru berakhir karena tidak aktif lebih dari 7 hari. Silakan masuk kembali.";
+const ADMIN_ACTIVITY_WRITE_MS = 60 * 1000;
 
 function createId() {
   return typeof crypto !== "undefined" && crypto.randomUUID
@@ -105,7 +72,7 @@ function normalizeStudentName(value) {
     .trim();
 }
 
-async function fetchAllSupabaseRows(table, columns = "*") {
+async function fetchAllSupabaseRows(table, columns) {
   const pageSize = 1000;
   const rows = [];
   let page = 0;
@@ -189,7 +156,7 @@ function mapStudent(item) {
     className: item.class_name,
     gender: item.gender || "",
     username: item.username,
-    password: item.password,
+    isActive: item.is_active !== false,
   };
 }
 
@@ -476,7 +443,37 @@ function DatabaseLoading({ label }) {
 }
 
 export default function Home() {
-  const [students, setStudents] = useState(supabase ? [] : initialStudents);
+  if (!supabase) return <MissingConfiguration />;
+  return <AbsensiApp />;
+}
+
+function MissingConfiguration() {
+  return (
+    <main className="session-loading">
+      <div>
+        <Logo />
+        <p className="form-error" role="alert">
+          <WarningCircle size={18} />
+          Aplikasi belum terhubung ke database. Hubungi admin sekolah untuk
+          mengatur konfigurasi Supabase.
+        </p>
+      </div>
+    </main>
+  );
+}
+
+function clearAccountStorage() {
+  localStorage.removeItem(ADMIN_CACHE_KEY);
+  localStorage.removeItem(REMOTE_CACHE_KEY);
+  localStorage.removeItem(ADMIN_ACTIVITY_KEY);
+}
+
+function readAdminLastActive() {
+  return Number(localStorage.getItem(ADMIN_ACTIVITY_KEY)) || null;
+}
+
+function AbsensiApp() {
+  const [students, setStudents] = useState([]);
   const [attendances, setAttendances] = useState([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceSyncScope, setAttendanceSyncScope] = useState(null);
@@ -489,8 +486,10 @@ export default function Home() {
   const [attendanceCheckSyncScope, setAttendanceCheckSyncScope] = useState(null);
   const [serverNow, setServerNow] = useState(new Date());
   const [holidays, setHolidays] = useState([]);
+  const [accountDataLoading, setAccountDataLoading] = useState(false);
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
   const [view, setView] = useState("dashboard");
   const [query, setQuery] = useState("");
   const [classFilter, setClassFilter] = useState("Semua kelas");
@@ -500,90 +499,224 @@ export default function Home() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [attendanceDeleteTarget, setAttendanceDeleteTarget] = useState(null);
   const [menstruationDecision, setMenstruationDecision] = useState(null);
-  const [teacherPassword, setTeacherPassword] = useState("123");
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [prayerSchedule, setPrayerSchedule] = useState(defaultPrayerSchedule);
-  const [scheduleReady, setScheduleReady] = useState(!supabase);
+  const [scheduleReady, setScheduleReady] = useState(false);
   const remoteSnapshotAt = useRef(0);
   const cacheCursors = useRef({ students: 0, holidays: 0 });
   const reportRequest = useRef(0);
   const attendanceCheckRequest = useRef(0);
+  // Auth user id whose profile is currently shown; null while signed out.
+  const authUserId = useRef(null);
+  // Bumped on every session change so a slower, older resolution is discarded.
+  const authRun = useRef(0);
+  const loginInFlight = useRef(false);
 
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
   }).format(serverNow);
   const [attendanceCheckDate, setAttendanceCheckDate] = useState(todayKey);
 
+  function resetAccountState() {
+    remoteSnapshotAt.current = 0;
+    cacheCursors.current = { students: 0, holidays: 0 };
+    setStudents([]);
+    setAttendances([]);
+    setAttendanceSyncScope(null);
+    setReportHistory([]);
+    setReportClassRanking([]);
+    setReportSyncScope(null);
+    setAttendanceCheckRecords([]);
+    setAttendanceCheckSyncScope(null);
+    setHolidays([]);
+    setView("dashboard");
+    setEditing(null);
+    setDeleteTarget(null);
+    setAttendanceDeleteTarget(null);
+    setPasswordModalOpen(false);
+    setAttendanceNotice("");
+  }
+
+  // Ends the local session. `callSignOut` is false when Supabase already
+  // dropped the session (SIGNED_OUT event), so there is nothing to revoke.
+  async function endSession(message, { callSignOut = true } = {}) {
+    authRun.current += 1;
+    authUserId.current = null;
+    clearAccountStorage();
+    resetAccountState();
+    setUser(null);
+    setNotice(message);
+    if (callSignOut) await supabase.auth.signOut({ scope: "local" });
+  }
+
+  function showUser(session, nextUser) {
+    // Another account signed in (e.g. from a second tab): drop the old data.
+    if (authUserId.current && authUserId.current !== session.user.id) {
+      resetAccountState();
+    }
+    authUserId.current = session.user.id;
+    setNotice("");
+    setUser(nextUser);
+  }
+
+  // Turns a Supabase session into the app's `user`. `source` is "login" for a
+  // sign-in from this tab's form, otherwise the session is being restored.
+  async function applySession(session, source) {
+    const run = ++authRun.current;
+    if (!session) {
+      authUserId.current = null;
+      setUser(null);
+      return;
+    }
+    const role = session.user.app_metadata?.role;
+    if (role === "admin") {
+      const lastActive = readAdminLastActive();
+      if (source !== "login" && isAdminSessionExpired(lastActive, Date.now())) {
+        await endSession(E_ADMIN_IDLE);
+        return;
+      }
+      if (source === "login" || lastActive === null) {
+        localStorage.setItem(ADMIN_ACTIVITY_KEY, String(Date.now()));
+      }
+      showUser(session, ADMIN_USER);
+      return;
+    }
+    if (role !== "student") {
+      await endSession(E_NO_STUDENT);
+      return;
+    }
+    const { data, error } = await fetchOwnStudentProfile(session.user.id);
+    if (run !== authRun.current) return;
+    if (error) {
+      // Keep the Supabase session: a network error is not a reason to sign out.
+      authUserId.current = null;
+      setUser(null);
+      setNotice(`Gagal memuat profil murid: ${error.message}`);
+      return;
+    }
+    if (!data || data.is_active === false) {
+      await endSession(E_NO_STUDENT);
+      return;
+    }
+    showUser(session, { ...mapStudent(data), role: "student" });
+  }
+
   useEffect(() => {
     let active = true;
-    async function loadData() {
-      const storedSession = localStorage.getItem("dzuhur-session");
-      if (storedSession) setUser(JSON.parse(storedSession));
-      if (supabase) {
-        const cache = readRemoteCache();
-        if (cache) {
-          remoteSnapshotAt.current = cache.snapshotAt;
-          cacheCursors.current = cache.cursors;
-          setStudents(cache.students);
-          setHolidays(cache.holidays);
-        }
-        const initialServerTime = await fetchServerTime();
-        if (initialServerTime) setServerNow(initialServerTime);
-        const cacheIsFresh =
-          cache && Date.now() - cache.snapshotAt < REMOTE_CACHE_TTL_MS;
-        if (!cacheIsFresh) {
-          const cursor = await fetchLatestSyncCursor();
-          const [studentsResult, holidaysResult] = await Promise.all([
-            fetchAllSupabaseRows(
-              "students",
-              "id,nis,name,class_name,gender,username,password",
+    let subscription = null;
+    async function restoreSession() {
+      try {
+        const initial = await supabase.auth.getSession();
+        if (initial.data.session) {
+          for (const key of LEGACY_STORAGE_KEYS) localStorage.removeItem(key);
+        } else {
+          await migrateLegacySession(localStorage, (username, password) =>
+            signInWithUsername(supabase, username, password).then(
+              (result) => !result.error,
             ),
-            fetchAllSupabaseRows("holidays", "date"),
-          ]);
-          const hasError = studentsResult.error || holidaysResult.error;
-          if (hasError) {
-            if (!cache) {
-              setNotice(
-                "Database belum siap. Jalankan schema Supabase terlebih dahulu.",
-              );
+          );
+        }
+        const { data } = await supabase.auth.getSession();
+        if (!active) return;
+        await applySession(data.session, "restore");
+      } catch {
+        if (active) setNotice(E_SESSION_ENDED);
+      }
+      if (!active) return;
+      setReady(true);
+      subscription = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === "INITIAL_SESSION") return;
+        // Supabase calls listeners while holding its auth lock; querying from
+        // inside the callback would deadlock, so handle the event afterwards.
+        setTimeout(() => {
+          if (!active) return;
+          if (event === "SIGNED_OUT") {
+            if (authUserId.current) {
+              endSession(E_SESSION_ENDED, { callSignOut: false });
+            } else {
+              authRun.current += 1;
             }
-          } else {
-            setStudents((studentsResult.data || []).map(mapStudent));
-            setHolidays((holidaysResult.data || []).map((item) => item.date));
-            remoteSnapshotAt.current = Date.now();
-            cacheCursors.current = { students: cursor, holidays: cursor };
+            return;
           }
-        }
-      } else {
-        const storedStudents = localStorage.getItem("dzuhur-students");
-        const storedAttendances = localStorage.getItem("dzuhur-attendances");
-        const storedHolidays = localStorage.getItem("dzuhur-holidays");
-        if (storedStudents) setStudents(JSON.parse(storedStudents));
-        if (storedAttendances) setAttendances(JSON.parse(storedAttendances));
-        if (storedHolidays) setHolidays(JSON.parse(storedHolidays));
-      }
-      const storedTeacherPassword = localStorage.getItem("dzuhur-teacher-password");
-      if (storedTeacherPassword) setTeacherPassword(storedTeacherPassword);
-      const storedPrayerSchedule = !supabase && localStorage.getItem("dzuhur-prayer-schedule");
-      if (storedPrayerSchedule) {
-        try {
-          const parsedSchedule = JSON.parse(storedPrayerSchedule);
-          if (parsedSchedule.start && parsedSchedule.end) {
-            setPrayerSchedule({ ...defaultPrayerSchedule, ...parsedSchedule });
-          }
-        } catch {
-          // Use the default schedule when stored settings are invalid.
-        }
-      }
-      if (active) setReady(true);
+          if (loginInFlight.current || !session) return;
+          if (session.user.id !== authUserId.current) applySession(session, "restore");
+        }, 0);
+      }).data.subscription;
     }
-    loadData();
+    restoreSession();
     return () => {
       active = false;
+      subscription?.unsubscribe();
     };
   }, []);
   useEffect(() => {
-    if (!supabase) return;
+    if (user?.role !== "admin") return;
+    function recordActivity() {
+      const now = Date.now();
+      const lastActive = readAdminLastActive();
+      if (isAdminSessionExpired(lastActive, now)) {
+        endSession(E_ADMIN_IDLE);
+        return;
+      }
+      if (lastActive === null || now - lastActive >= ADMIN_ACTIVITY_WRITE_MS) {
+        localStorage.setItem(ADMIN_ACTIVITY_KEY, String(now));
+      }
+    }
+    window.addEventListener("pointerdown", recordActivity);
+    window.addEventListener("keydown", recordActivity);
+    return () => {
+      window.removeEventListener("pointerdown", recordActivity);
+      window.removeEventListener("keydown", recordActivity);
+    };
+  }, [user?.role]);
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const isAdmin = user.role === "admin";
+    async function loadAccountData() {
+      setAccountDataLoading(true);
+      const cache = isAdmin ? readRemoteCache() : null;
+      if (cache) {
+        remoteSnapshotAt.current = cache.snapshotAt;
+        cacheCursors.current = cache.cursors;
+        setStudents(cache.students);
+        setHolidays(cache.holidays);
+      }
+      const cacheIsFresh =
+        cache && Date.now() - cache.snapshotAt < REMOTE_CACHE_TTL_MS;
+      if (!cacheIsFresh) {
+        const cursor = await fetchLatestSyncCursor();
+        const [studentsResult, holidaysResult] = await Promise.all([
+          isAdmin
+            ? fetchAllSupabaseRows("students", STUDENT_COLUMNS)
+            : { data: [], error: null },
+          fetchAllSupabaseRows("holidays", "date"),
+        ]);
+        if (!active) return;
+        const hasError = studentsResult.error || holidaysResult.error;
+        if (hasError) {
+          if (!cache) {
+            setNotice(
+              "Database belum siap. Jalankan schema Supabase terlebih dahulu.",
+            );
+          }
+        } else {
+          if (isAdmin) setStudents((studentsResult.data || []).map(mapStudent));
+          setHolidays((holidaysResult.data || []).map((item) => item.date));
+          remoteSnapshotAt.current = Date.now();
+          cacheCursors.current = { students: cursor, holidays: cursor };
+        }
+      }
+      if (active) setAccountDataLoading(false);
+    }
+    loadAccountData();
+    return () => {
+      active = false;
+      setAccountDataLoading(false);
+    };
+  }, [user?.role, user?.id]);
+  useEffect(() => {
+    if (!user) return;
     let active = true;
     let requestId = 0;
     async function loadSchedule() {
@@ -618,17 +751,17 @@ export default function Home() {
       window.removeEventListener("focus", onFocus);
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user?.role, user?.id]);
   useEffect(() => {
     const ticker = setInterval(() => {
       setServerNow((current) => new Date(current.getTime() + 1000));
     }, 1000);
-    if (!supabase) return () => clearInterval(ticker);
     let active = true;
     const sync = async () => {
       const current = await fetchServerTime();
       if (active && current) setServerNow(current);
     };
+    sync();
     const syncTimer = setInterval(sync, 30000);
     return () => {
       active = false;
@@ -637,21 +770,10 @@ export default function Home() {
     };
   }, []);
   useEffect(() => {
-    if (!ready) return;
-    if (!supabase) localStorage.setItem("dzuhur-students", JSON.stringify(students));
-  }, [students, ready]);
-  useEffect(() => {
-    if (!ready) return;
-    if (!supabase)
-      localStorage.setItem("dzuhur-attendances", JSON.stringify(attendances));
-  }, [attendances, ready]);
-  useEffect(() => {
-    if (!ready) return;
-    if (!supabase) localStorage.setItem("dzuhur-holidays", JSON.stringify(holidays));
-  }, [holidays, ready]);
-  useEffect(() => {
-    if (!supabase || !ready) return;
+    if (user?.role !== "admin") return;
     const timer = setTimeout(() => {
+      // Logout may have cleared storage before this effect was cleaned up.
+      if (!authUserId.current) return;
       try {
         localStorage.setItem(
           REMOTE_CACHE_KEY,
@@ -667,9 +789,9 @@ export default function Home() {
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [students, holidays, ready]);
+  }, [students, holidays, user?.role]);
   useEffect(() => {
-    if (!supabase || !ready || !user) return;
+    if (!user) return;
     let active = true;
     async function loadAttendanceScope() {
       setAttendanceLoading(true);
@@ -702,10 +824,10 @@ export default function Home() {
     };
   }, [ready, user?.role, user?.id, todayKey]);
   useEffect(() => {
-    if (!supabase || !ready) return;
+    if (!user) return;
     const sources = [];
     const needsStudents =
-      !user ||
+      user.role === "admin" &&
       ["dashboard", "reports", "attendance-check", "students"].includes(view);
     if (needsStudents) {
       sources.push({
@@ -792,9 +914,7 @@ export default function Home() {
             if (current?.role !== "student" || String(current.id) !== String(student.id)) {
               return current;
             }
-            const next = { ...student, role: "student" };
-            localStorage.setItem("dzuhur-session", JSON.stringify(next));
-            return next;
+            return { ...student, role: "student" };
           });
         }
         return;
@@ -907,17 +1027,6 @@ export default function Home() {
   );
 
   async function loadReportRange(startDate, endDate, className = "Semua kelas") {
-    if (!supabase) {
-      const records = attendances.filter(
-        (item) =>
-          item.date >= startDate &&
-          item.date <= endDate &&
-          (className === "Semua kelas" || item.className === className),
-      );
-      setReportHistory(records);
-      setReportClassRanking(buildMonthlyClassPrayerRanking(students, records, startDate, endDate, className));
-      return;
-    }
     const requestId = ++reportRequest.current;
     setReportLoading(true);
     const cursor = await fetchLatestSyncCursor();
@@ -951,10 +1060,6 @@ export default function Home() {
 
   async function loadAttendanceCheckDate(date) {
     setAttendanceCheckDate(date);
-    if (!supabase) {
-      setAttendanceCheckRecords(attendances.filter((item) => item.date === date));
-      return;
-    }
     const requestId = ++attendanceCheckRequest.current;
     setAttendanceCheckLoading(true);
     const cursor = await fetchLatestSyncCursor();
@@ -1000,71 +1105,53 @@ export default function Home() {
     setAttendanceCheckRecords(remove);
   }
 
-  function login(event) {
+  async function login(event) {
     event.preventDefault();
+    if (loginInFlight.current) return;
     const form = new FormData(event.currentTarget);
-    const username = form.get("username").trim();
-    const password = form.get("password");
+    const username = String(form.get("username") || "");
+    const password = String(form.get("password") || "");
     setNotice("");
-    if (username === "guru" && password === teacherPassword) {
-      const session = { name: "Guru Admin", role: "admin" };
-      setUser(session);
-      localStorage.setItem("dzuhur-session", JSON.stringify(session));
-      setView("dashboard");
-      return;
+    loginInFlight.current = true;
+    setLoggingIn(true);
+    try {
+      const { error } = await signInWithUsername(supabase, username, password);
+      if (error) {
+        setNotice(error);
+        return;
+      }
+      const { data } = await supabase.auth.getSession();
+      await applySession(data.session, "login");
+    } finally {
+      loginInFlight.current = false;
+      setLoggingIn(false);
     }
-    const student = students.find(
-      (item) => item.username === username && item.password === password,
-    );
-    if (student) {
-      const session = { ...student, role: "student" };
-      setUser(session);
-      localStorage.setItem("dzuhur-session", JSON.stringify(session));
-      return;
-    }
-    setNotice("Username atau password belum sesuai.");
+  }
+
+  function logout() {
+    return endSession("");
   }
 
   async function changePassword({ currentPassword, newPassword }) {
-    if (user.role === "admin") {
-      if (currentPassword !== teacherPassword) return "Password saat ini tidak sesuai.";
-      localStorage.setItem("dzuhur-teacher-password", newPassword);
-      setTeacherPassword(newPassword);
-      return "Password guru berhasil diubah.";
-    }
-    if (currentPassword !== user.password) return "Password saat ini tidak sesuai.";
-    if (supabase) {
-      const { error } = await supabase
-        .from("students")
-        .update({ password: newPassword })
-        .eq("id", String(user.id));
-      if (error) return `Gagal mengubah password: ${error.message}`;
-    }
-    const updatedUser = { ...user, password: newPassword };
-    setStudents((current) =>
-      current.map((student) => (student.id === user.id ? updatedUser : student)),
-    );
-    setUser(updatedUser);
-    localStorage.setItem("dzuhur-session", JSON.stringify(updatedUser));
-    return "Password murid berhasil diubah.";
+    const error = await changeOwnPassword(user.username, currentPassword, newPassword);
+    if (error) return error;
+    return user.role === "admin"
+      ? "Password guru berhasil diubah."
+      : "Password murid berhasil diubah.";
   }
 
   async function savePrayerSchedule(nextSchedule) {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from("prayer_schedule")
-        .update({
-          enabled: nextSchedule.enabled,
-          start_time: nextSchedule.start,
-          end_time: nextSchedule.end,
-        })
-        .eq("id", 1)
-        .select("id")
-        .single();
-      if (error || !data) return `Gagal menyimpan jadwal: ${error?.message || "Jadwal tidak ditemukan."}`;
-    } else {
-      localStorage.setItem("dzuhur-prayer-schedule", JSON.stringify(nextSchedule));
-    }
+    const { data, error } = await supabase
+      .from("prayer_schedule")
+      .update({
+        enabled: nextSchedule.enabled,
+        start_time: nextSchedule.start,
+        end_time: nextSchedule.end,
+      })
+      .eq("id", 1)
+      .select("id")
+      .single();
+    if (error || !data) return `Gagal menyimpan jadwal: ${error?.message || "Jadwal tidak ditemukan."}`;
     setPrayerSchedule(nextSchedule);
     setScheduleReady(true);
     return null;
@@ -1098,20 +1185,18 @@ export default function Home() {
        }).format(serverNow),
       status,
     };
-    if (supabase) {
-      const { error } = await supabase.from("attendances").insert({
-        id: String(record.id),
-        student_id: String(record.studentId),
-        student_name: record.studentName,
-        class_name: record.className,
-        date: record.date,
-        time: record.time,
-        status: record.status,
-      });
-      if (error) {
-        setAttendanceNotice(`Gagal menyimpan absensi: ${error.message}`);
-        return;
-      }
+    const { error } = await supabase.from("attendances").insert({
+      id: String(record.id),
+      student_id: String(record.studentId),
+      student_name: record.studentName,
+      class_name: record.className,
+      date: record.date,
+      time: record.time,
+      status: record.status,
+    });
+    if (error) {
+      setAttendanceNotice(`Gagal menyimpan absensi: ${error.message}`);
+      return;
     }
     setAttendanceNotice("");
     upsertAttendanceSlices(record);
@@ -1131,14 +1216,12 @@ export default function Home() {
 
   async function toggleHoliday() {
     const isHoliday = holidays.includes(todayKey);
-    if (supabase) {
-      const result = isHoliday
-        ? await supabase.from("holidays").delete().eq("date", todayKey)
-        : await supabase.from("holidays").insert({ date: todayKey });
-      if (result.error) {
-        setNotice(`Gagal mengubah status hari libur: ${result.error.message}`);
-        return;
-      }
+    const result = isHoliday
+      ? await supabase.from("holidays").delete().eq("date", todayKey)
+      : await supabase.from("holidays").insert({ date: todayKey });
+    if (result.error) {
+      setNotice(`Gagal mengubah status hari libur: ${result.error.message}`);
+      return;
     }
     setHolidays((current) =>
       isHoliday
@@ -1178,20 +1261,18 @@ export default function Home() {
       }).format(serverNow),
       status,
     };
-    if (supabase) {
-      const { error } = await supabase.from("attendances").insert({
-        id: String(record.id),
-        student_id: String(record.studentId),
-        student_name: record.studentName,
-        class_name: record.className,
-        date: record.date,
-        time: record.time,
-        status: record.status,
-      });
-      if (error) {
-        setNotice(`Gagal menandai absensi: ${error.message}`);
-        return;
-      }
+    const { error } = await supabase.from("attendances").insert({
+      id: String(record.id),
+      student_id: String(record.studentId),
+      student_name: record.studentName,
+      class_name: record.className,
+      date: record.date,
+      time: record.time,
+      status: record.status,
+    });
+    if (error) {
+      setNotice(`Gagal menandai absensi: ${error.message}`);
+      return;
     }
     setNotice("");
     upsertAttendanceSlices(record);
@@ -1216,20 +1297,18 @@ export default function Home() {
        }).format(serverNow),
       status: "Hadir",
     };
-    if (supabase) {
-      const { error } = await supabase.from("attendances").insert({
-        id: String(record.id),
-        student_id: String(record.studentId),
-        student_name: record.studentName,
-        class_name: record.className,
-        date: record.date,
-        time: record.time,
-        status: record.status,
-      });
-      if (error) {
-        setNotice(`Gagal menandai kehadiran: ${error.message}`);
-        return;
-      }
+    const { error } = await supabase.from("attendances").insert({
+      id: String(record.id),
+      student_id: String(record.studentId),
+      student_name: record.studentName,
+      class_name: record.className,
+      date: record.date,
+      time: record.time,
+      status: record.status,
+    });
+    if (error) {
+      setNotice(`Gagal menandai kehadiran: ${error.message}`);
+      return;
     }
     upsertAttendanceSlices(record);
   }
@@ -1254,20 +1333,18 @@ export default function Home() {
        }).format(serverNow),
       status: "Haid",
     };
-    if (supabase) {
-      const { error } = await supabase.from("attendances").insert({
-        id: String(record.id),
-        student_id: String(record.studentId),
-        student_name: record.studentName,
-        class_name: record.className,
-        date: record.date,
-        time: record.time,
-        status: record.status,
-      });
-      if (error) {
-        setNotice(`Gagal menandai haid: ${error.message}`);
-        return;
-      }
+    const { error } = await supabase.from("attendances").insert({
+      id: String(record.id),
+      student_id: String(record.studentId),
+      student_name: record.studentName,
+      class_name: record.className,
+      date: record.date,
+      time: record.time,
+      status: record.status,
+    });
+    if (error) {
+      setNotice(`Gagal menandai haid: ${error.message}`);
+      return;
     }
     setNotice("");
     upsertAttendanceSlices(record);
@@ -1294,40 +1371,38 @@ export default function Home() {
       setNotice("Username sudah digunakan.");
       return;
     }
-    if (supabase) {
-      const payload = {
-        nis: value.nis,
-        name: value.name,
-        class_name: value.className,
-        gender: value.gender || null,
-        username: value.username,
-        password: value.password,
-      };
-      let result = isEditing
-        ? await supabase
-            .from("students")
-            .update(payload)
-            .eq("username", editing.username)
-            .select("id")
-            .maybeSingle()
-        : await supabase.from("students").insert({ id: String(value.id), ...payload });
-      if (isEditing && !result.error && !result.data) {
-        result = await supabase
+    const payload = {
+      nis: value.nis,
+      name: value.name,
+      class_name: value.className,
+      gender: value.gender || null,
+      username: value.username,
+      password: value.password,
+    };
+    let result = isEditing
+      ? await supabase
           .from("students")
           .update(payload)
-          .eq("id", String(value.id))
+          .eq("username", editing.username)
           .select("id")
-          .maybeSingle();
-      }
-      const { error } = result;
-      if (isEditing && !error && !result.data) {
-        setNotice("Data murid tidak ditemukan di database. Muat ulang data lalu coba lagi.");
-        return;
-      }
-      if (error) {
-        setNotice(`Gagal menyimpan data murid: ${error.message}`);
-        return;
-      }
+          .maybeSingle()
+      : await supabase.from("students").insert({ id: String(value.id), ...payload });
+    if (isEditing && !result.error && !result.data) {
+      result = await supabase
+        .from("students")
+        .update(payload)
+        .eq("id", String(value.id))
+        .select("id")
+        .maybeSingle();
+    }
+    const { error } = result;
+    if (isEditing && !error && !result.data) {
+      setNotice("Data murid tidak ditemukan di database. Muat ulang data lalu coba lagi.");
+      return;
+    }
+    if (error) {
+      setNotice(`Gagal menyimpan data murid: ${error.message}`);
+      return;
     }
     setStudents((current) => upsertById(current, value, false));
     setEditing(null);
@@ -1340,7 +1415,7 @@ export default function Home() {
   async function confirmDelete() {
     if (!deleteTarget) return;
     const id = deleteTarget.id;
-    if (supabase) await supabase.from("students").delete().eq("id", String(id));
+    await supabase.from("students").delete().eq("id", String(id));
     setStudents((current) => current.filter((item) => item.id !== id));
     setDeleteTarget(null);
   }
@@ -1352,15 +1427,13 @@ export default function Home() {
   async function confirmCancelAttendance() {
     if (!attendanceDeleteTarget) return;
     const id = attendanceDeleteTarget.id;
-    if (supabase) {
-      const { error } = await supabase
-        .from("attendances")
-        .delete()
-        .eq("id", String(id));
-      if (error) {
-        setNotice(`Gagal membatalkan status: ${error.message}`);
-        return;
-      }
+    const { error } = await supabase
+      .from("attendances")
+      .delete()
+      .eq("id", String(id));
+    if (error) {
+      setNotice(`Gagal membatalkan status: ${error.message}`);
+      return;
     }
     deleteAttendanceSlices(id);
     setAttendanceDeleteTarget(null);
@@ -1375,8 +1448,11 @@ export default function Home() {
         </div>
       </main>
     );
-  if (!user) return <Login notice={notice} onLogin={login} />;
-  if (attendanceLoading && (user.role === "student" || view === "dashboard"))
+  if (!user) return <Login notice={notice} onLogin={login} pending={loggingIn} />;
+  if (
+    (attendanceLoading || accountDataLoading) &&
+    (user.role === "student" || view === "dashboard")
+  )
     return (
       <main className="session-loading">
         <div>
@@ -1402,10 +1478,7 @@ export default function Home() {
             attendanceNotice={attendanceNotice}
             onDismissAttendanceNotice={() => setAttendanceNotice("")}
            onChangePassword={() => setPasswordModalOpen(true)}
-          onLogout={() => {
-            localStorage.removeItem("dzuhur-session");
-            setUser(null);
-          }}
+          onLogout={logout}
         />
         {passwordModalOpen && (
           <PasswordModal
@@ -1463,10 +1536,7 @@ export default function Home() {
           ];
         })
       }
-      onLogout={() => {
-        localStorage.removeItem("dzuhur-session");
-        setUser(null);
-      }}
+      onLogout={logout}
        />
       {passwordModalOpen && (
         <PasswordModal
@@ -1493,7 +1563,7 @@ export default function Home() {
   );
 }
 
-function Login({ notice, onLogin }) {
+function Login({ notice, onLogin, pending }) {
   return (
     <main className="login-shell">
       <section className="login-story">
@@ -1545,8 +1615,8 @@ function Login({ notice, onLogin }) {
               required
             />
           </label>
-          <button className="primary" type="submit">
-            Masuk ke aplikasi
+          <button className="primary" type="submit" disabled={pending}>
+            {pending ? "Memproses..." : "Masuk ke aplikasi"}
           </button>
         </form>
       </section>
@@ -1720,20 +1790,15 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
     (item) => item.studentId === user.id && item.date === todayKey,
   );
   async function validateConfirmationTime() {
-    let schedule = prayerSchedule;
-    if (supabase) {
-      const result = await fetchPrayerSchedule();
-      if (result.error || !result.schedule) {
-        setTimeNotice({
-          title: "Jadwal belum tersedia",
-          message: "Gagal memuat jadwal terbaru. Coba lagi beberapa saat.",
-        });
-        return false;
-      }
-      schedule = result.schedule;
-    } else if (!scheduleReady) {
+    const result = await fetchPrayerSchedule();
+    if (result.error || !result.schedule) {
+      setTimeNotice({
+        title: "Jadwal belum tersedia",
+        message: "Gagal memuat jadwal terbaru. Coba lagi beberapa saat.",
+      });
       return false;
     }
+    const schedule = result.schedule;
     if (!schedule.enabled) return true;
     const minutes = jakartaMinutesNow();
     const startMinutes = timeToMinutes(schedule.start);
@@ -3161,62 +3226,48 @@ function Students({
   }
   async function confirmImport() {
     if (!preview?.students?.length) return;
-    if (supabase) {
-      const { data: existing, error: readError } = await fetchAllSupabaseRows(
-        "students",
-        "username",
-      );
-      if (readError) {
-        setPreview((current) => ({ ...current, error: readError.message }));
-        return;
-      }
-      const usernames = new Set(
-        (existing || []).map((item) => String(item.username || "").trim()),
-      );
-      const additions = preview.students.filter((item) => {
-        const username = String(item.username || "").trim();
-        if (!username || usernames.has(username)) return false;
-        usernames.add(username);
-        return true;
-      });
-      const payload = additions.map((item) => ({
-          id: String(item.id),
-          nis: item.nis || "",
-          name: normalizeStudentName(item.name),
-          class_name: item.className,
-          gender: item.gender || null,
-          username: String(item.username || "").trim(),
-          password: item.password,
-        }));
-      let { error } = await supabase
-        .from("students")
-        .insert(payload, { onConflict: "username", ignoreDuplicates: true });
-      if (error?.code === "23505") {
-        error = null;
-        for (const student of payload) {
-          const result = await supabase.from("students").insert(student);
-          if (result.error && result.error.code !== "23505") {
-            error = result.error;
-            break;
-          }
+    const { data: existing, error: readError } = await fetchAllSupabaseRows(
+      "students",
+      "username",
+    );
+    if (readError) {
+      setPreview((current) => ({ ...current, error: readError.message }));
+      return;
+    }
+    const usernames = new Set(
+      (existing || []).map((item) => String(item.username || "").trim()),
+    );
+    const additions = preview.students.filter((item) => {
+      const username = String(item.username || "").trim();
+      if (!username || usernames.has(username)) return false;
+      usernames.add(username);
+      return true;
+    });
+    const payload = additions.map((item) => ({
+        id: String(item.id),
+        nis: item.nis || "",
+        name: normalizeStudentName(item.name),
+        class_name: item.className,
+        gender: item.gender || null,
+        username: String(item.username || "").trim(),
+        password: item.password,
+      }));
+    let { error } = await supabase
+      .from("students")
+      .insert(payload, { onConflict: "username", ignoreDuplicates: true });
+    if (error?.code === "23505") {
+      error = null;
+      for (const student of payload) {
+        const result = await supabase.from("students").insert(student);
+        if (result.error && result.error.code !== "23505") {
+          error = result.error;
+          break;
         }
       }
-      if (error) {
-        setPreview((current) => ({ ...current, error: error.message }));
-        return;
-      }
-    } else {
-      const current = JSON.parse(
-        localStorage.getItem("dzuhur-students") || "[]",
-      );
-      const usernames = new Set(current.map((item) => item.username));
-      localStorage.setItem(
-        "dzuhur-students",
-        JSON.stringify([
-          ...current,
-          ...preview.students.filter((item) => !usernames.has(item.username)),
-        ]),
-      );
+    }
+    if (error) {
+      setPreview((current) => ({ ...current, error: error.message }));
+      return;
     }
     window.location.reload();
   }
