@@ -19,6 +19,13 @@
 //                   succeeds is deleted again and reported as FAIL. Realtime must
 //                   deliver no row data; anon still gets an empty "Error 401:
 //                   Unauthorized" notice per change (counted, not a failure).
+//                   The after-phase realtime check is only meaningful with
+//                   --trigger-with-service-role (something must change during the
+//                   listen); without it the check prints SKIP, unless row data
+//                   arrives anyway (FAIL).
+//   Realtime, both phases: a channel that does not reach SUBSCRIBED is a FAIL.
+//   Output: PASS / FAIL / SKIP lines; SKIP is neither pass nor fail. Summary
+//   "ALL PASS[, N SKIP]" (exit 0) or "N FAIL[, M SKIP]" (exit 1).
 //   --read-only     skip every write check (use on production before Tahap 4).
 //   --student=u:p   also log in as that student. after: own profile is the only
 //                   readable student row, credential columns are unreadable, direct
@@ -27,7 +34,8 @@
 //   --trigger-with-service-role
 //                   during the 10 s realtime listen, insert and delete the holiday
 //                   1900-01-01 with SUPABASE_SERVICE_ROLE_KEY so sync_changes gets
-//                   rows. STAGING ONLY. Not allowed with --read-only.
+//                   rows, and listen with the service role as a control that must
+//                   receive row data. STAGING ONLY. Not allowed with --read-only.
 //
 // Env: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or
 // NEXT_PUBLIC_SUPABASE_ANON_KEY); SUPABASE_SERVICE_ROLE_KEY only for
@@ -79,7 +87,7 @@ function parseArgs(argv) {
       const colon = value.indexOf(":");
       if (colon <= 0) throw new Error("--student harus berbentuk <username>:<password>.");
       options.student = { username: value.slice(0, colon), password: value.slice(colon + 1) };
-    } else throw new Error(`Argumen tidak dikenal: ${arg}`);
+    } else throw new Error(`Argumen tidak dikenal: ${arg.split("=")[0]}`);
   }
   if (options.phase !== "before" && options.phase !== "after") {
     throw new Error("--phase=before atau --phase=after wajib diisi.");
@@ -121,9 +129,15 @@ const clientOptions = { auth: { persistSession: false, autoRefreshToken: false }
 const service = serviceKey ? createClient(url, serviceKey, clientOptions) : null;
 
 let failures = 0;
+let skips = 0;
 function report(name, ok, detail) {
   if (!ok) failures += 1;
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ` (${detail})` : ""}`);
+}
+// SKIP: the check could not prove anything; counts as neither pass nor fail.
+function skip(name, reason) {
+  skips += 1;
+  console.log(`SKIP ${name} (${reason})`);
 }
 function note(text) {
   console.log(`# ${text}`);
@@ -159,10 +173,13 @@ async function rest(method, path, { token, body, prefer } = {}) {
     code: ok ? null : (json && json.code) || null,
     rows: ok && Array.isArray(json) ? json : null,
     json: ok ? json : null,
+    // Used only to recognise known denial messages; never printed.
+    message: ok ? null : (json && json.message) || null,
   };
 }
 
 const ok2xx = (r) => r.status >= 200 && r.status < 300;
+const E_ADMIN_ONLY = "Hanya guru yang dapat melakukan aksi ini.";
 const isRejected = (r) => r.status === 401 || r.status === 403 || r.code === "42501";
 const describe = (r) =>
   [r.status, r.code, r.rows ? `${r.rows.length} rows` : null].filter(Boolean).join(", ");
@@ -431,7 +448,11 @@ async function studentChecks(student) {
     token,
     body: { p_month: firstOfMonth(), p_class_name: null },
   });
-  report("student rpc get_monthly_class_prayer_ranking rejected", !ok2xx(ranking), describe(ranking));
+  report(
+    "student rpc get_monthly_class_prayer_ranking rejected",
+    isRejected(ranking) || (ranking.code === "P0001" && ranking.message === E_ADMIN_ONLY),
+    describe(ranking),
+  );
   return { client, token };
 }
 
@@ -496,28 +517,47 @@ async function realtimeChecks(studentSession) {
     await studentSession.client.realtime.setAuth(studentSession.token);
     listeners.push(listen(studentSession.client, "student"));
   }
-  await Promise.all(listeners.map((l) => l.ready));
+  // Control: service role bypasses RLS, so with the trigger it must see row data.
+  // Without it, "0 events" could also mean the subscription is not delivering
+  // anything at all (Realtime reports SUBSCRIBED even for a table that does not exist).
+  const control = options.trigger ? listen(service, "control") : null;
+  await Promise.all([...listeners, ...(control ? [control] : [])].map((l) => l.ready));
   const subscribedAt = Date.now();
   await new Promise((resolve) => setTimeout(resolve, 1000));
   const trigger = await triggerSyncChanges();
   const remaining = REALTIME_LISTEN_MS - (Date.now() - subscribedAt);
   if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
 
+  if (control) {
+    report(
+      "control (service role) realtime sync_changes 10s receives row data",
+      control.status === "SUBSCRIBED" && control.dataEvents > 0,
+      `${control.status}, ${control.dataEvents} events with row data`,
+    );
+  }
   for (const l of listeners) {
     const name = `${l.label} realtime sync_changes 10s`;
     const detail =
       `${l.status}, ${l.dataEvents} events with row data, ` +
       `${l.deniedNotices} empty "401 Unauthorized" notices, trigger: ${trigger || "none (passive)"}`;
-    if (BEFORE && trigger) {
-      report(`${name} receives row data`, l.status === "SUBSCRIBED" && l.dataEvents > 0, detail);
+    if (l.status !== "SUBSCRIBED") {
+      // A channel that never subscribed (timeout, CHANNEL_ERROR, socket failure)
+      // proves nothing about access, in either phase.
+      report(`${name} subscribed`, false, detail);
+    } else if (BEFORE && trigger) {
+      report(`${name} receives row data`, l.dataEvents > 0, detail);
     } else if (BEFORE) {
-      report(`${name} subscribes (passive, no trigger)`, l.status === "SUBSCRIBED", detail);
+      report(`${name} subscribes (passive, no trigger)`, true, detail);
+    } else if (!trigger) {
+      if (l.dataEvents > 0) report(`${name} receives no row data`, false, detail);
+      else skip(`${name} receives no row data`, "tanpa pemicu — jalankan dengan --trigger-with-service-role di staging");
     } else {
       report(`${name} receives no row data`, l.dataEvents === 0, detail);
     }
   }
   await anonClient.removeAllChannels();
   if (studentSession) await studentSession.client.removeAllChannels();
+  if (control) await service.removeAllChannels();
 }
 
 // --- main ---------------------------------------------------------------------
@@ -537,5 +577,6 @@ const studentSession = options.student ? await studentChecks(options.student) : 
 await realtimeChecks(studentSession);
 if (studentSession) await studentSession.client.auth.signOut({ scope: "local" });
 
-console.log(failures ? `${failures} FAIL` : "ALL PASS");
+const skipped = skips ? `, ${skips} SKIP` : "";
+console.log(failures ? `${failures} FAIL${skipped}` : `ALL PASS${skipped}`);
 process.exit(failures ? 1 : 0);

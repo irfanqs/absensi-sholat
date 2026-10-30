@@ -51,7 +51,14 @@ PASS anon realtime sync_changes 10s subscribes (passive, no trigger) (SUBSCRIBED
 ALL PASS
 ```
 
-`VERIFY --phase=before --student=9A_Irfan:123 --trigger-with-service-role`: ALL PASS. It runs the same 13 anon checks as above, plus `student login`, `student select own profile (auth_user_id) (200, 1 rows)`, `service-role trigger wrote sync_changes rows (2 rows)` and `anon realtime ... receives row data (2 events with row data)`. The script refuses `--read-only --trigger-with-service-role` and an invalid `--phase` with exit 2.
+`VERIFY --phase=before --student=9A_Irfan:123 --trigger-with-service-role`: ALL PASS. It runs the same 13 anon REST checks as the first run above (the first 13 lines, everything except the realtime line), plus:
+
+- `student login` and `student select own profile (auth_user_id) (200, 1 rows)`;
+- `service-role trigger wrote sync_changes rows (2 rows)`;
+- `control (service role) realtime sync_changes 10s receives row data (SUBSCRIBED, 2 events with row data)`;
+- `anon realtime ... receives row data (SUBSCRIBED, 2 events with row data)`.
+
+That is 18 checks in total. The script refuses `--read-only --trigger-with-service-role` and an invalid `--phase` with exit 2. An unknown flag is reported by name only, never with its value: `--studen=someone:SECRETVALUE` prints `Argumen tidak dikenal: --studen`.
 
 ### Old app replay at Tahap 1
 
@@ -108,18 +115,36 @@ PASS student cannot read credential columns (password: 400, 42703; password_lega
 PASS student direct insert attendances rejected (403, 42501)
 PASS student rpc get_monthly_class_prayer_ranking rejected (400, P0001)
 PASS service-role trigger wrote sync_changes rows (2 rows)
+PASS control (service role) realtime sync_changes 10s receives row data (SUBSCRIBED, 2 events with row data)
 PASS anon realtime sync_changes 10s receives no row data (SUBSCRIBED, 0 events with row data, 2 empty "401 Unauthorized" notices, trigger: service role)
 PASS student realtime sync_changes 10s receives no row data (SUBSCRIBED, 0 events with row data, 0 empty "401 Unauthorized" notices, trigger: service role)
 ALL PASS
 ```
 
-`VERIFY --phase=after --read-only`: ALL PASS. That is the 6 select and RPC rejections plus `anon realtime ... receives no row data`, with passive listening.
+Without the trigger, nothing changes during the listen, so the realtime checks cannot prove anything and print SKIP. SKIP is neither a pass nor a failure:
+
+```
+$ VERIFY --phase=after --student=9A_Irfan:123      # same first 16 lines as above, then:
+SKIP anon realtime sync_changes 10s receives no row data (tanpa pemicu — jalankan dengan --trigger-with-service-role di staging)
+SKIP student realtime sync_changes 10s receives no row data (tanpa pemicu — jalankan dengan --trigger-with-service-role di staging)
+ALL PASS, 2 SKIP                                    # exit 0
+
+$ VERIFY --phase=after --read-only                  # 6 select/RPC rejections (401, 42501), then:
+# write checks skipped (--read-only)
+SKIP anon realtime sync_changes 10s receives no row data (tanpa pemicu — jalankan dengan --trigger-with-service-role di staging)
+ALL PASS, 1 SKIP                                    # exit 0
+```
+
+Realtime negative controls use throwaway copies of the script in the workspace:
+
+- **Anon realtime client with an invalid key:** `FAIL anon realtime sync_changes 10s subscribed (CHANNEL_ERROR, ...)`, exit 1. This happens both with the trigger and with `--read-only`. A channel that never reaches SUBSCRIBED is a FAIL.
+- **Listeners pointed at a table that does not exist:** Realtime still reports SUBSCRIBED. The control listener catches it: `FAIL control (service role) realtime sync_changes 10s receives row data (SUBSCRIBED, 0 events with row data)`, exit 1.
 
 Negative control: `VERIFY --phase=before` with Tahap 4 applied returns 12 FAIL, exit 1.
 
 ### Realtime and anon
 
-After Tahap 4, Supabase Realtime still sends anon one notice per `sync_changes` insert. Each notice has `errors: ["Error 401: Unauthorized"]` and empty `new` and `old` objects (0 keys). It carries only the table name, the event type and the commit time, never row data. So the check asserts "no row data" and reports how many of these notices arrived. The student role has SELECT, and RLS denies the rows, so the student receives nothing at all.
+After Tahap 4, Supabase Realtime still sends anon one notice per `sync_changes` insert. Each notice has `errors: ["Error 401: Unauthorized"]` and empty `new` and `old` objects (0 keys). It carries only the table name, the event type and the commit time, never row data. So the check asserts "no row data" and reports how many of these notices arrived. With `--trigger-with-service-role`, a service-role listener on the same subscription must receive row data. This proves that the 0 events are a denial and not a dead subscription. The student role has SELECT, and RLS denies the rows, so the student receives nothing at all.
 
 ### New app smoke test (Tahap 4, through `lib/api.js`)
 
