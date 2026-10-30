@@ -16,10 +16,16 @@ import {
   adminSetHoliday,
   adminSetPrayerSchedule,
   changeOwnPassword,
+  createStudent,
+  deactivateStudent,
   fetchOwnStudentProfile,
+  importStudents,
+  resetStudentPassword,
   submitAttendance,
   submitLateAttendance,
+  updateStudent,
 } from "../lib/api";
+import { normalizeStudentName } from "../lib/admin-students";
 import {
   ArrowLeft,
   BookOpen,
@@ -63,25 +69,15 @@ const E_SESSION_ENDED = "Sesi berakhir. Silakan masuk kembali.";
 const E_ADMIN_IDLE =
   "Sesi guru berakhir karena tidak aktif lebih dari 7 hari. Silakan masuk kembali.";
 const ADMIN_ACTIVITY_WRITE_MS = 60 * 1000;
-
-function createId() {
-  return typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : Date.now().toString() + "-" + Math.random().toString(16).slice(2);
-}
+// Initial password for students added by hand or imported; sent only to the admin API.
+const DEFAULT_STUDENT_PASSWORD = "123";
+// Matches the admin import route's per-request limit.
+const IMPORT_BATCH_SIZE = 100;
 
 function normalizeImportHeader(value) {
   return String(value || "")
     .toLowerCase()
     .replace(/[\s./_-]/g, "");
-}
-
-function normalizeStudentName(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/^(')?([a-z])/, (_, apostrophe = "", letter) => `${apostrophe}${letter.toUpperCase()}`)
-    .replace(/(^|[\s-])([a-z])/g, (_, separator, letter) => `${separator}${letter.toUpperCase()}`)
-    .trim();
 }
 
 async function fetchAllSupabaseRows(table, columns) {
@@ -400,15 +396,7 @@ function parseImportedRows(rows, existingStudents = []) {
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, ".")
           .replace(/^\.|\.$/g, "");
-      return {
-        id: createId(),
-        nis,
-        name,
-        gender,
-        className,
-        username,
-        password: "123",
-      };
+      return { nis, name, gender, className, username };
     })
     .filter(Boolean);
   return { students, excludedNonIslam, duplicates };
@@ -543,6 +531,8 @@ function AbsensiApp() {
   const attendanceInFlight = useRef(false);
   // Bumped on each attendance write so an older focus refetch does not undo it.
   const attendanceWriteSeq = useRef(0);
+  // Blocks a second submit of the student form while the first is in flight.
+  const studentSaveInFlight = useRef(false);
 
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
@@ -1040,9 +1030,14 @@ function AbsensiApp() {
   }, [user]);
 
   const todayAttendance = attendances.filter((item) => item.date === todayKey);
+  // Deactivated students stay in state (cache, realtime) but are hidden everywhere.
+  const activeStudents = useMemo(
+    () => students.filter((student) => student.isActive !== false),
+    [students],
+  );
   const filteredStudents = useMemo(
     () =>
-      students
+      activeStudents
         .filter(
           (student) =>
             (classFilter === "Semua kelas" ||
@@ -1054,7 +1049,7 @@ function AbsensiApp() {
         .sort((first, second) =>
           first.name.localeCompare(second.name, "id", { sensitivity: "base" }),
         ),
-    [students, classFilter, query],
+    [activeStudents, classFilter, query],
   );
 
   async function loadReportRange(startDate, endDate, className = "Semua kelas") {
@@ -1074,7 +1069,7 @@ function AbsensiApp() {
       setReportHistory(records);
       setReportClassRanking(
         rankingResult.error
-          ? buildMonthlyClassPrayerRanking(students, records, startDate, endDate, className)
+          ? buildMonthlyClassPrayerRanking(activeStudents, records, startDate, endDate, className)
           : rankingResult.data || [],
       );
       setNotice((current) => (rpcMissing && current.startsWith("Fungsi ranking") ? "" : current));
@@ -1299,57 +1294,27 @@ function AbsensiApp() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const isEditing = Boolean(editing?.id);
-    const value = {
-      id: isEditing ? editing.id : createId(),
-      nis: form.get("nis") || "",
+    // PATCH replaces every field, so the edit form always sends all of them.
+    const input = {
+      nis: String(form.get("nis") || "").trim(),
       name: normalizeStudentName(form.get("name")),
-      className: form.get("className"),
-      gender: form.get("gender") || "",
+      className: String(form.get("className") || ""),
+      gender: String(form.get("gender") || ""),
       username: String(form.get("username") || "").trim(),
-      password: form.get("password"),
     };
-    if (
-      students.some(
-        (item) => item.username === value.username && item.id !== value.id,
-      )
-    ) {
-      setNotice("Username sudah digunakan.");
-      return;
-    }
-    const payload = {
-      nis: value.nis,
-      name: value.name,
-      class_name: value.className,
-      gender: value.gender || null,
-      username: value.username,
-      password: value.password,
-    };
-    let result = isEditing
-      ? await supabase
-          .from("students")
-          .update(payload)
-          .eq("username", editing.username)
-          .select("id")
-          .maybeSingle()
-      : await supabase.from("students").insert({ id: String(value.id), ...payload });
-    if (isEditing && !result.error && !result.data) {
-      result = await supabase
-        .from("students")
-        .update(payload)
-        .eq("id", String(value.id))
-        .select("id")
-        .maybeSingle();
-    }
-    const { error } = result;
-    if (isEditing && !error && !result.data) {
-      setNotice("Data murid tidak ditemukan di database. Muat ulang data lalu coba lagi.");
-      return;
-    }
+    if (!isEditing) input.password = String(form.get("password") || "");
+    if (studentSaveInFlight.current) return;
+    studentSaveInFlight.current = true;
+    const { data, error } = isEditing
+      ? await updateStudent(editing.id, input)
+      : await createStudent(input);
+    studentSaveInFlight.current = false;
     if (error) {
-      setNotice(`Gagal menyimpan data murid: ${error.message}`);
+      setNotice(`Gagal menyimpan data murid: ${error}`);
       return;
     }
-    setStudents((current) => upsertById(current, value, false));
+    setNotice("");
+    setStudents((current) => upsertById(current, mapStudent(data.student), false));
     setEditing(null);
   }
 
@@ -1360,9 +1325,23 @@ function AbsensiApp() {
   async function confirmDelete() {
     if (!deleteTarget) return;
     const id = deleteTarget.id;
-    await supabase.from("students").delete().eq("id", String(id));
-    setStudents((current) => current.filter((item) => item.id !== id));
+    const { error } = await deactivateStudent(id);
+    if (error) {
+      setNotice(`Gagal menonaktifkan murid: ${error}`);
+      setDeleteTarget(null);
+      return;
+    }
+    setStudents((current) =>
+      current.map((item) => (item.id === id ? { ...item, isActive: false } : item)),
+    );
     setDeleteTarget(null);
+  }
+
+  async function resetPassword(student, password) {
+    const { error } = await resetStudentPassword(student.id, password);
+    if (error) return `Gagal mereset password: ${error}`;
+    setNotice(`Password ${student.name} berhasil direset.`);
+    return null;
   }
 
   function requestCancelAttendance(record) {
@@ -1436,7 +1415,8 @@ function AbsensiApp() {
   return (
     <>
       <AdminApp
-       students={students}
+       students={activeStudents}
+       allStudents={students}
        attendances={todayAttendance}
        holidays={holidays}
        todayKey={todayKey}
@@ -1461,6 +1441,7 @@ function AbsensiApp() {
       setEditing={setEditing}
        onSave={saveStudent}
        onDelete={requestDelete}
+       onResetPassword={resetPassword}
        onOpenPasswordChange={() => setPasswordModalOpen(true)}
         prayerSchedule={prayerSchedule}
         scheduleReady={scheduleReady}
@@ -1470,15 +1451,6 @@ function AbsensiApp() {
        onMarkStudentMenstruation={markStudentMenstruation}
        onToggleHoliday={toggleHoliday}
        onMarkStudentForDate={markStudentForDate}
-      onImport={(imported) =>
-        setStudents((current) => {
-          const usernames = new Set(current.map((item) => item.username));
-          return [
-            ...current,
-            ...imported.filter((item) => !usernames.has(item.username)),
-          ];
-        })
-      }
       onLogout={logout}
        />
       {passwordModalOpen && (
@@ -2092,6 +2064,7 @@ function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, on
 function AdminApp(props) {
   const {
     students,
+    allStudents,
     attendances,
     holidays,
     history,
@@ -2114,6 +2087,7 @@ function AdminApp(props) {
     setEditing,
     onSave,
     onDelete,
+    onResetPassword,
     onOpenPasswordChange,
     onCancelAttendance,
     onMarkStudentPresent,
@@ -2264,7 +2238,7 @@ function AdminApp(props) {
         {view === "students" && (
           <Students
             students={filteredStudents}
-            allStudents={students}
+            allStudents={allStudents}
             classOptions={classOptions}
             query={query}
             setQuery={setQuery}
@@ -2272,6 +2246,7 @@ function AdminApp(props) {
             setClassFilter={setClassFilter}
             setEditing={setEditing}
             onDelete={onDelete}
+            onResetPassword={onResetPassword}
           />
         )}
         {view === "qr" && <QrPage />}
@@ -3119,8 +3094,10 @@ function Students({
   setClassFilter,
   setEditing,
   onDelete,
+  onResetPassword,
 }) {
   const [preview, setPreview] = useState(null);
+  const [resetTarget, setResetTarget] = useState(null);
   function handleFile(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -3171,51 +3148,53 @@ function Students({
     reader.readAsArrayBuffer(file);
   }
   async function confirmImport() {
-    if (!preview?.students?.length) return;
-    const { data: existing, error: readError } = await fetchAllSupabaseRows(
-      "students",
-      "username",
-    );
-    if (readError) {
-      setPreview((current) => ({ ...current, error: readError.message }));
-      return;
-    }
-    const usernames = new Set(
-      (existing || []).map((item) => String(item.username || "").trim()),
-    );
-    const additions = preview.students.filter((item) => {
-      const username = String(item.username || "").trim();
-      if (!username || usernames.has(username)) return false;
-      usernames.add(username);
-      return true;
-    });
-    const payload = additions.map((item) => ({
-        id: String(item.id),
-        nis: item.nis || "",
-        name: normalizeStudentName(item.name),
-        class_name: item.className,
-        gender: item.gender || null,
-        username: String(item.username || "").trim(),
-        password: item.password,
-      }));
-    let { error } = await supabase
-      .from("students")
-      .insert(payload, { onConflict: "username", ignoreDuplicates: true });
-    if (error?.code === "23505") {
-      error = null;
-      for (const student of payload) {
-        const result = await supabase.from("students").insert(student);
-        if (result.error && result.error.code !== "23505") {
-          error = result.error;
-          break;
-        }
+    if (!preview?.students?.length || preview.importing) return;
+    const rows = preview.students.map((item) => ({
+      nis: item.nis,
+      name: item.name,
+      className: item.className,
+      gender: item.gender,
+      username: item.username,
+      password: DEFAULT_STUDENT_PASSWORD,
+    }));
+    const total = rows.length;
+    const results = [];
+    let requestError = "";
+    for (let start = 0; start < total; start += IMPORT_BATCH_SIZE) {
+      const batch = rows.slice(start, start + IMPORT_BATCH_SIZE);
+      const progress = `Mengimpor ${start + batch.length} dari ${total} murid...`;
+      setPreview((current) => ({ ...current, importing: true, progress }));
+      const { data, error } = await importStudents(batch);
+      if (error) {
+        requestError = error;
+        break;
       }
+      results.push(...data.results);
     }
-    if (error) {
-      setPreview((current) => ({ ...current, error: error.message }));
+    const failures = results.filter((item) => item.status === "error");
+    if (!requestError && !failures.length) {
+      window.location.reload();
       return;
     }
-    window.location.reload();
+    const created = results.filter((item) => item.status === "created").length;
+    const duplicates = results.filter((item) => item.status === "duplicate").length;
+    const summary = [
+      `${created} murid tersimpan`,
+      duplicates ? `${duplicates} username sudah digunakan` : "",
+      failures.length ? `${failures.length} gagal` : "",
+      requestError ? `${total - results.length} belum diproses` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    setPreview((current) => ({
+      ...current,
+      importing: false,
+      progress: "",
+      failures,
+      error: requestError
+        ? `Import berhenti: ${requestError} (${summary}).`
+        : `Sebagian murid gagal diimpor (${summary}).`,
+    }));
   }
   return (
     <section className="students-panel">
@@ -3245,7 +3224,6 @@ function Students({
               name: "",
               className: classOptions[0] || "",
               username: "",
-              password: "123",
             })
           }
         >
@@ -3279,7 +3257,15 @@ function Students({
                   : "-"}
             </span>
             <span>{student.username}</span>
-            <span className="password-text">{student.password}</span>
+            <span>
+              <button
+                type="button"
+                className="secondary compact"
+                onClick={() => setResetTarget(student)}
+              >
+                Reset password
+              </button>
+            </span>
             <span className="row-actions">
               <button
                 aria-label="Edit murid"
@@ -3288,7 +3274,8 @@ function Students({
                 <PencilSimple size={18} />
               </button>
               <button
-                aria-label="Hapus murid"
+                aria-label="Nonaktifkan murid"
+                title="Nonaktifkan murid"
                 onClick={() => onDelete(student.id)}
               >
                 <Trash size={18} />
@@ -3302,6 +3289,13 @@ function Students({
           preview={preview}
           onClose={() => setPreview(null)}
           onConfirm={confirmImport}
+        />
+      )}
+      {resetTarget && (
+        <ResetPasswordModal
+          student={resetTarget}
+          onClose={() => setResetTarget(null)}
+          onReset={onResetPassword}
         />
       )}
     </section>
@@ -3325,16 +3319,29 @@ function ImportPreview({ preview, onClose, onConfirm }) {
           <h2>
             {preview.noNewStudents
               ? "Data sudah tersimpan"
-              : preview.error
-                ? "File belum bisa diimpor"
-                : "Periksa data murid"}
+              : preview.failures
+                ? "Import belum selesai"
+                : preview.error
+                  ? "File belum bisa diimpor"
+                  : "Periksa data murid"}
           </h2>
           <p className="muted">{preview.fileName}</p>
         </div>
         {preview.error ? (
-          <p className={preview.noNewStudents ? "import-info" : "form-error"}>
-            {preview.error}
-          </p>
+          <>
+            <p className={preview.noNewStudents ? "import-info" : "form-error"}>
+              {preview.error}
+            </p>
+            {preview.failures?.length > 0 && (
+              <ul className="import-warning import-failures">
+                {preview.failures.map((failure, index) => (
+                  <li key={`${failure.username}-${index}`}>
+                    <strong>{failure.username || "(username kosong)"}</strong>: {failure.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         ) : (
           <>
             <p className="import-summary">
@@ -3360,15 +3367,30 @@ function ImportPreview({ preview, onClose, onConfirm }) {
                 </span>
               ))}
             </div>
+            {preview.progress && (
+              <p className="import-info" role="status">
+                {preview.progress}
+              </p>
+            )}
           </>
         )}
         <div className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose}>
-            Batal
+          <button
+            type="button"
+            className="secondary"
+            onClick={onClose}
+            disabled={preview.importing}
+          >
+            {preview.failures ? "Tutup" : "Batal"}
           </button>
           {!preview.error && (
-            <button type="button" className="primary" onClick={onConfirm}>
-              Data sudah benar, simpan
+            <button
+              type="button"
+              className="primary"
+              onClick={onConfirm}
+              disabled={preview.importing}
+            >
+              {preview.importing ? "Mengimpor..." : "Data sudah benar, simpan"}
             </button>
           )}
         </div>
@@ -3652,16 +3674,77 @@ function StudentModal({ student, classOptions, onClose, onSave }) {
           Username
           <input name="username" defaultValue={student.username} required />
         </label>
-        <label>
-          Password
-          <input name="password" defaultValue={student.password} required />
-        </label>
+        {!student.id && (
+          <label>
+            Password
+            <input name="password" defaultValue={DEFAULT_STUDENT_PASSWORD} required />
+          </label>
+        )}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={onClose}>
             Batal
           </button>
           <button type="submit" className="primary">
             Simpan data
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ResetPasswordModal({ student, onClose, onReset }) {
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const newPassword = String(form.get("newPassword") || "");
+    const confirmation = String(form.get("confirmation") || "");
+    if (newPassword.length < 3) {
+      setError("Password baru minimal 3 karakter.");
+      return;
+    }
+    if (newPassword !== confirmation) {
+      setError("Konfirmasi password belum sesuai.");
+      return;
+    }
+    setSaving(true);
+    const message = await onReset(student, newPassword);
+    setSaving(false);
+    if (message) {
+      setError(message);
+      return;
+    }
+    onClose();
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <form className="student-modal" onSubmit={submit}>
+        <div>
+          <p className="eyebrow">RESET PASSWORD</p>
+          <h2>Reset password murid</h2>
+          <p className="muted">
+            Atur password baru untuk <strong>{student.name}</strong> ({student.username}).
+          </p>
+        </div>
+        <label>
+          Password baru
+          <input name="newPassword" type="password" required autoComplete="new-password" />
+        </label>
+        <label>
+          Konfirmasi password baru
+          <input name="confirmation" type="password" required autoComplete="new-password" />
+        </label>
+        {error && <p className="form-error">{error}</p>}
+        <div className="modal-actions">
+          <button type="button" className="secondary" onClick={onClose}>
+            Batal
+          </button>
+          <button type="submit" className="primary" disabled={saving}>
+            {saving ? "Menyimpan..." : "Simpan password"}
           </button>
         </div>
       </form>
@@ -3682,11 +3765,11 @@ function DeleteConfirm({ student, onCancel, onConfirm }) {
           <WarningCircle size={30} weight="fill" />
         </div>
         <div>
-          <p className="eyebrow">KONFIRMASI HAPUS</p>
-          <h2 id="delete-student-title">Hapus data murid?</h2>
+          <p className="eyebrow">KONFIRMASI NONAKTIFKAN</p>
+          <h2 id="delete-student-title">Nonaktifkan murid?</h2>
           <p className="muted">
-            Data <strong>{student.name}</strong> akan dihapus dari daftar murid.
-            Tindakan ini tidak dapat dibatalkan.
+            <strong>{student.name}</strong> akan disembunyikan dari daftar murid dan
+            tidak bisa login lagi. Riwayat absensinya tetap tersimpan.
           </p>
         </div>
         <div className="modal-actions">
@@ -3694,7 +3777,7 @@ function DeleteConfirm({ student, onCancel, onConfirm }) {
             Batal
           </button>
           <button type="button" className="danger-button" onClick={onConfirm}>
-            Hapus data
+            Nonaktifkan murid
           </button>
         </div>
       </section>
