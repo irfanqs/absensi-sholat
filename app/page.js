@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabase";
 import {
   ADMIN_ACTIVITY_KEY,
+  E_LOGIN_RETRY,
   LEGACY_STORAGE_KEYS,
   isAdminSessionExpired,
   migrateLegacySession,
@@ -633,11 +634,15 @@ function AbsensiApp() {
         if (initial.data.session) {
           for (const key of LEGACY_STORAGE_KEYS) localStorage.removeItem(key);
         } else {
-          await migrateLegacySession(localStorage, (username, password) =>
-            signInWithUsername(supabase, username, password).then(
-              (result) => !result.error,
-            ),
+          const migration = await migrateLegacySession(
+            localStorage,
+            (username, password) =>
+              signInWithUsername(supabase, username, password).then((result) => {
+                if (!result.error) return true;
+                return result.error === E_LOGIN_RETRY ? "retry" : false;
+              }),
           );
+          if (migration === "retry" && active) setNotice(E_LOGIN_RETRY);
         }
         const { data } = await supabase.auth.getSession();
         if (!active) return;
@@ -1147,6 +1152,8 @@ function AbsensiApp() {
         setNotice(error);
         return;
       }
+      // A legacy session kept for a retried migration is no longer needed.
+      for (const key of LEGACY_STORAGE_KEYS) localStorage.removeItem(key);
       const { data } = await supabase.auth.getSession();
       await applySession(data.session, "login");
     } finally {
