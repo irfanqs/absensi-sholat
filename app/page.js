@@ -10,7 +10,16 @@ import {
   migrateLegacySession,
   signInWithUsername,
 } from "../lib/auth";
-import { changeOwnPassword, fetchOwnStudentProfile } from "../lib/api";
+import {
+  adminDeleteAttendance,
+  adminMarkAttendance,
+  adminSetHoliday,
+  adminSetPrayerSchedule,
+  changeOwnPassword,
+  fetchOwnStudentProfile,
+  submitAttendance,
+  submitLateAttendance,
+} from "../lib/api";
 import {
   ArrowLeft,
   BookOpen,
@@ -39,12 +48,15 @@ const QRCodeCanvas = dynamic(
   { ssr: false },
 );
 
-const REMOTE_CACHE_KEY = "dzuhur-supabase-cache-v2";
+// Admin-only cache of students and holidays (never passwords).
+const REMOTE_CACHE_KEY = "dzuhur-cache-v3";
+const LEGACY_REMOTE_CACHE_KEY = "dzuhur-supabase-cache-v2";
 const REMOTE_CACHE_TTL_MS = 29 * 24 * 60 * 60 * 1000;
+// Students have no realtime; on tab focus they refetch, at most this often.
+const FOCUS_REFRESH_MIN_MS = 5 * 1000;
 const ATTENDANCE_COLUMNS =
   "id,student_id,student_name,class_name,date,time,status";
 const STUDENT_COLUMNS = "id,nis,name,class_name,gender,username,is_active";
-const ADMIN_CACHE_KEY = "dzuhur-cache-v3";
 const ADMIN_USER = { role: "admin", name: "Guru Admin", username: "guru" };
 const E_NO_STUDENT = "Akun siswa tidak ditemukan atau nonaktif.";
 const E_SESSION_ENDED = "Sesi berakhir. Silakan masuk kembali.";
@@ -263,20 +275,35 @@ async function fetchServerTime() {
   return error || !data ? null : new Date(data);
 }
 
+// Only the fields mapStudent produces, so a typed password never reaches the cache.
+function toCachedStudent(student) {
+  return {
+    id: student.id,
+    nis: student.nis,
+    name: student.name,
+    className: student.className,
+    gender: student.gender,
+    username: student.username,
+    isActive: student.isActive,
+  };
+}
+
+function mapPrayerSchedule(row) {
+  return {
+    enabled: row.enabled,
+    start: row.start_time.slice(0, 5),
+    end: row.end_time.slice(0, 5),
+    attendanceStartDate: row.attendance_start_date,
+  };
+}
+
 async function fetchPrayerSchedule() {
   const { data, error } = await supabase
     .from("prayer_schedule")
-    .select("enabled,start_time,end_time")
+    .select("enabled,start_time,end_time,attendance_start_date")
     .eq("id", 1)
     .single();
-  return {
-    schedule: data && {
-      enabled: data.enabled,
-      start: data.start_time.slice(0, 5),
-      end: data.end_time.slice(0, 5),
-    },
-    error,
-  };
+  return { schedule: data && mapPrayerSchedule(data), error };
 }
 
 function parseImportedRows(rows, existingStudents = []) {
@@ -413,6 +440,7 @@ const defaultPrayerSchedule = {
   enabled: true,
   start: "11:30",
   end: "15:00",
+  attendanceStartDate: "2026-08-01",
 };
 
 function timeToMinutes(value) {
@@ -463,8 +491,8 @@ function MissingConfiguration() {
 }
 
 function clearAccountStorage() {
-  localStorage.removeItem(ADMIN_CACHE_KEY);
   localStorage.removeItem(REMOTE_CACHE_KEY);
+  localStorage.removeItem(LEGACY_REMOTE_CACHE_KEY);
   localStorage.removeItem(ADMIN_ACTIVITY_KEY);
 }
 
@@ -511,6 +539,10 @@ function AbsensiApp() {
   // Bumped on every session change so a slower, older resolution is discarded.
   const authRun = useRef(0);
   const loginInFlight = useRef(false);
+  // A student's own attendance submit in progress (blocks double clicks).
+  const attendanceInFlight = useRef(false);
+  // Bumped on each attendance write so an older focus refetch does not undo it.
+  const attendanceWriteSeq = useRef(0);
 
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
@@ -685,7 +717,8 @@ function AbsensiApp() {
       const cacheIsFresh =
         cache && Date.now() - cache.snapshotAt < REMOTE_CACHE_TTL_MS;
       if (!cacheIsFresh) {
-        const cursor = await fetchLatestSyncCursor();
+        // sync_changes is admin-only; students have no sync cursor.
+        const cursor = isAdmin ? await fetchLatestSyncCursor() : 0;
         const [studentsResult, holidaysResult] = await Promise.all([
           isAdmin
             ? fetchAllSupabaseRows("students", STUDENT_COLUMNS)
@@ -717,8 +750,12 @@ function AbsensiApp() {
   }, [user?.role, user?.id]);
   useEffect(() => {
     if (!user) return;
+    const isAdmin = user.role === "admin";
+    const studentId = isAdmin ? null : String(user.id);
     let active = true;
     let requestId = 0;
+    let focusRefreshing = false;
+    let lastFocusRefresh = Date.now();
     async function loadSchedule() {
       const id = ++requestId;
       const result = await fetchPrayerSchedule();
@@ -732,24 +769,51 @@ function AbsensiApp() {
         setNotice((current) => current.startsWith("Gagal memuat jadwal konfirmasi:") ? "" : current);
       }
     }
-    const channel = supabase
-      .channel("prayer-schedule-sync")
-      .on("postgres_changes", {
-        event: "UPDATE",
-        schema: "public",
-        table: "prayer_schedule",
-        filter: "id=eq.1",
-      }, loadSchedule)
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") loadSchedule();
-      });
-    const onFocus = () => loadSchedule();
+    // Students have no realtime: refetch their own attendance and holidays.
+    async function loadStudentData() {
+      const writeSeq = attendanceWriteSeq.current;
+      const [attendanceResult, holidaysResult] = await Promise.all([
+        fetchAttendanceRows({ studentId }),
+        fetchAllSupabaseRows("holidays", "date"),
+      ]);
+      if (!active) return;
+      // Errors keep the data already shown; the next focus tries again.
+      if (!attendanceResult.error && writeSeq === attendanceWriteSeq.current) {
+        setAttendances(attendanceResult.data || []);
+      }
+      if (!holidaysResult.error) {
+        setHolidays((holidaysResult.data || []).map((item) => item.date));
+      }
+    }
+    async function onFocus() {
+      if (focusRefreshing || Date.now() - lastFocusRefresh < FOCUS_REFRESH_MIN_MS) return;
+      focusRefreshing = true;
+      lastFocusRefresh = Date.now();
+      try {
+        await Promise.all(isAdmin ? [loadSchedule()] : [loadSchedule(), loadStudentData()]);
+      } finally {
+        focusRefreshing = false;
+      }
+    }
+    const channel = isAdmin
+      ? supabase
+          .channel("prayer-schedule-sync")
+          .on("postgres_changes", {
+            event: "UPDATE",
+            schema: "public",
+            table: "prayer_schedule",
+            filter: "id=eq.1",
+          }, loadSchedule)
+          .subscribe((status) => {
+            if (status === "SUBSCRIBED") loadSchedule();
+          })
+      : null;
     window.addEventListener("focus", onFocus);
     loadSchedule();
     return () => {
       active = false;
       window.removeEventListener("focus", onFocus);
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [user?.role, user?.id]);
   useEffect(() => {
@@ -780,7 +844,7 @@ function AbsensiApp() {
           JSON.stringify({
             snapshotAt: remoteSnapshotAt.current,
             cursors: cacheCursors.current,
-            students,
+            students: students.map(toCachedStudent),
             holidays,
           }),
         );
@@ -795,7 +859,8 @@ function AbsensiApp() {
     let active = true;
     async function loadAttendanceScope() {
       setAttendanceLoading(true);
-      const cursor = await fetchLatestSyncCursor();
+      // sync_changes is admin-only; students have no sync cursor.
+      const cursor = user.role === "admin" ? await fetchLatestSyncCursor() : 0;
       const result =
         user.role === "student"
           ? await fetchAttendanceRows({ studentId: user.id })
@@ -824,10 +889,11 @@ function AbsensiApp() {
     };
   }, [ready, user?.role, user?.id, todayKey]);
   useEffect(() => {
-    if (!user) return;
+    // Realtime is admin-only: students cannot read sync_changes and refetch
+    // their own data on focus instead (see the schedule effect above).
+    if (user?.role !== "admin") return;
     const sources = [];
     const needsStudents =
-      user.role === "admin" &&
       ["dashboard", "reports", "attendance-check", "students"].includes(view);
     if (needsStudents) {
       sources.push({
@@ -836,22 +902,7 @@ function AbsensiApp() {
         realtimeFilter: "table_name=eq.students",
       });
     }
-    if (user?.role === "student" && attendanceSyncScope?.studentId) {
-      sources.push({
-        cursor: Math.min(
-          attendanceSyncScope.cursor,
-          cacheCursors.current.students,
-        ),
-        studentId: attendanceSyncScope.studentId,
-        realtimeFilter: `student_id=eq.${attendanceSyncScope.studentId}`,
-      });
-      sources.push({
-        cursor: cacheCursors.current.holidays,
-        tableName: "holidays",
-        realtimeFilter: "table_name=eq.holidays",
-      });
-    } else if (
-      user?.role === "admin" &&
+    if (
       view === "dashboard" &&
       attendanceSyncScope?.startDate === todayKey
     ) {
@@ -860,25 +911,18 @@ function AbsensiApp() {
         recordDate: todayKey,
         realtimeFilter: `record_date=eq.${todayKey}`,
       });
-    } else if (user?.role === "admin" && view === "reports" && reportSyncScope) {
+    } else if (view === "reports" && reportSyncScope) {
       sources.push({
         ...reportSyncScope,
         realtimeFilter: `record_date=gte.${reportSyncScope.startDate},record_date=lte.${reportSyncScope.endDate}`,
       });
-    } else if (
-      user?.role === "admin" &&
-      view === "attendance-check" &&
-      attendanceCheckSyncScope
-    ) {
+    } else if (view === "attendance-check" && attendanceCheckSyncScope) {
       sources.push({
         ...attendanceCheckSyncScope,
         realtimeFilter: `record_date=eq.${attendanceCheckSyncScope.recordDate}`,
       });
     }
-    if (
-      user?.role === "admin" &&
-      ["dashboard", "attendance-check"].includes(view)
-    ) {
+    if (["dashboard", "attendance-check"].includes(view)) {
       sources.push({
         cursor: cacheCursors.current.holidays,
         tableName: "holidays",
@@ -895,12 +939,10 @@ function AbsensiApp() {
       const row = change.row_data;
       const deleting = change.operation === "DELETE";
       if (change.table_name === "students") {
-        if (user?.role !== "student") {
-          cacheCursors.current.students = Math.max(
-            cacheCursors.current.students,
-            Number(change.id),
-          );
-        }
+        cacheCursors.current.students = Math.max(
+          cacheCursors.current.students,
+          Number(change.id),
+        );
         if (deleting) {
           setStudents((current) =>
             current.filter((item) => String(item.id) !== String(change.record_id)),
@@ -910,12 +952,6 @@ function AbsensiApp() {
           setStudents((current) =>
             upsertById(current, student, change.operation === "INSERT"),
           );
-          setUser((current) => {
-            if (current?.role !== "student" || String(current.id) !== String(student.id)) {
-              return current;
-            }
-            return { ...student, role: "student" };
-          });
         }
         return;
       }
@@ -937,12 +973,7 @@ function AbsensiApp() {
         deleting
           ? current.filter((item) => String(item.id) !== String(change.record_id))
           : upsertById(current, record, change.operation === "INSERT");
-      if (
-        (user?.role === "student" && String(record.studentId) === String(user.id)) ||
-        (user?.role === "admin" && record.date === todayKey)
-      ) {
-        setAttendances(updateSlice);
-      }
+      if (record.date === todayKey) setAttendances(updateSlice);
       if (
         reportSyncScope &&
         record.date >= reportSyncScope.startDate &&
@@ -1141,20 +1172,17 @@ function AbsensiApp() {
   }
 
   async function savePrayerSchedule(nextSchedule) {
-    const { data, error } = await supabase
-      .from("prayer_schedule")
-      .update({
-        enabled: nextSchedule.enabled,
-        start_time: nextSchedule.start,
-        end_time: nextSchedule.end,
-      })
-      .eq("id", 1)
-      .select("id")
-      .single();
-    if (error || !data) return `Gagal menyimpan jadwal: ${error?.message || "Jadwal tidak ditemukan."}`;
-    setPrayerSchedule(nextSchedule);
+    const { data, error } = await adminSetPrayerSchedule(nextSchedule);
+    if (error || !data) return `Gagal menyimpan jadwal: ${error || "Jadwal tidak ditemukan."}`;
+    setPrayerSchedule(mapPrayerSchedule(data));
     setScheduleReady(true);
     return null;
+  }
+
+  // Shows the row the server stored (its date and time), never a client-built one.
+  function applyAttendanceRow(row) {
+    attendanceWriteSeq.current += 1;
+    upsertAttendanceSlices(mapAttendance(row));
   }
 
   async function recordAttendance(status, date = todayKey) {
@@ -1172,34 +1200,23 @@ function AbsensiApp() {
       )
     )
       return;
-    const record = {
-      id: createId(),
-      studentId: user.id,
-      studentName: user.name,
-      className: user.className,
-      date,
-      time: new Intl.DateTimeFormat("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Asia/Jakarta",
-       }).format(serverNow),
-      status,
-    };
-    const { error } = await supabase.from("attendances").insert({
-      id: String(record.id),
-      student_id: String(record.studentId),
-      student_name: record.studentName,
-      class_name: record.className,
-      date: record.date,
-      time: record.time,
-      status: record.status,
-    });
-    if (error) {
-      setAttendanceNotice(`Gagal menyimpan absensi: ${error.message}`);
-      return;
+    if (attendanceInFlight.current) return;
+    attendanceInFlight.current = true;
+    try {
+      // Today's date is decided by the server; earlier dates are corrections.
+      const { data, error } =
+        date === todayKey
+          ? await submitAttendance(status)
+          : await submitLateAttendance(date, status);
+      if (error || !data) {
+        setAttendanceNotice(error || "Absensi tidak tersimpan. Coba lagi.");
+        return;
+      }
+      setAttendanceNotice("");
+      applyAttendanceRow(data);
+    } finally {
+      attendanceInFlight.current = false;
     }
-    setAttendanceNotice("");
-    upsertAttendanceSlices(record);
   }
 
   function confirmPrayer() {
@@ -1216,11 +1233,9 @@ function AbsensiApp() {
 
   async function toggleHoliday() {
     const isHoliday = holidays.includes(todayKey);
-    const result = isHoliday
-      ? await supabase.from("holidays").delete().eq("date", todayKey)
-      : await supabase.from("holidays").insert({ date: todayKey });
-    if (result.error) {
-      setNotice(`Gagal mengubah status hari libur: ${result.error.message}`);
+    const { error } = await adminSetHoliday(todayKey, !isHoliday);
+    if (error) {
+      setNotice(`Gagal mengubah status hari libur: ${error}`);
       return;
     }
     setHolidays((current) =>
@@ -1231,6 +1246,16 @@ function AbsensiApp() {
           : [...current, todayKey],
     );
     setNotice("");
+  }
+
+  async function markAttendanceAsAdmin(student, date, status, failureLabel) {
+    const { data, error } = await adminMarkAttendance(student.id, date, status);
+    if (error || !data) {
+      setNotice(`${failureLabel}: ${error || "Absensi tidak tersimpan."}`);
+      return;
+    }
+    setNotice("");
+    applyAttendanceRow(data);
   }
 
   async function markStudentForDate(student, status, date) {
@@ -1248,34 +1273,7 @@ function AbsensiApp() {
       )
     )
       return;
-    const record = {
-      id: createId(),
-      studentId: student.id,
-      studentName: student.name,
-      className: student.className,
-      date,
-      time: new Intl.DateTimeFormat("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Asia/Jakarta",
-      }).format(serverNow),
-      status,
-    };
-    const { error } = await supabase.from("attendances").insert({
-      id: String(record.id),
-      student_id: String(record.studentId),
-      student_name: record.studentName,
-      class_name: record.className,
-      date: record.date,
-      time: record.time,
-      status: record.status,
-    });
-    if (error) {
-      setNotice(`Gagal menandai absensi: ${error.message}`);
-      return;
-    }
-    setNotice("");
-    upsertAttendanceSlices(record);
+    await markAttendanceAsAdmin(student, date, status, "Gagal menandai absensi");
   }
 
   async function markStudentPresent(student) {
@@ -1284,33 +1282,7 @@ function AbsensiApp() {
       return;
     }
     if (attendances.some((item) => item.studentId === student.id && item.date === todayKey)) return;
-    const record = {
-      id: createId(),
-      studentId: student.id,
-      studentName: student.name,
-      className: student.className,
-      date: todayKey,
-      time: new Intl.DateTimeFormat("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Asia/Jakarta",
-       }).format(serverNow),
-      status: "Hadir",
-    };
-    const { error } = await supabase.from("attendances").insert({
-      id: String(record.id),
-      student_id: String(record.studentId),
-      student_name: record.studentName,
-      class_name: record.className,
-      date: record.date,
-      time: record.time,
-      status: record.status,
-    });
-    if (error) {
-      setNotice(`Gagal menandai kehadiran: ${error.message}`);
-      return;
-    }
-    upsertAttendanceSlices(record);
+    await markAttendanceAsAdmin(student, todayKey, "Hadir", "Gagal menandai kehadiran");
   }
 
   async function markStudentMenstruation(student) {
@@ -1320,34 +1292,7 @@ function AbsensiApp() {
     }
     if (student.gender !== "Perempuan") return;
     if (attendances.some((item) => item.studentId === student.id && item.date === todayKey)) return;
-    const record = {
-      id: createId(),
-      studentId: student.id,
-      studentName: student.name,
-      className: student.className,
-      date: todayKey,
-      time: new Intl.DateTimeFormat("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Asia/Jakarta",
-       }).format(serverNow),
-      status: "Haid",
-    };
-    const { error } = await supabase.from("attendances").insert({
-      id: String(record.id),
-      student_id: String(record.studentId),
-      student_name: record.studentName,
-      class_name: record.className,
-      date: record.date,
-      time: record.time,
-      status: record.status,
-    });
-    if (error) {
-      setNotice(`Gagal menandai haid: ${error.message}`);
-      return;
-    }
-    setNotice("");
-    upsertAttendanceSlices(record);
+    await markAttendanceAsAdmin(student, todayKey, "Haid", "Gagal menandai haid");
   }
 
   async function saveStudent(event) {
@@ -1427,14 +1372,12 @@ function AbsensiApp() {
   async function confirmCancelAttendance() {
     if (!attendanceDeleteTarget) return;
     const id = attendanceDeleteTarget.id;
-    const { error } = await supabase
-      .from("attendances")
-      .delete()
-      .eq("id", String(id));
+    const { error } = await adminDeleteAttendance(id);
     if (error) {
-      setNotice(`Gagal membatalkan status: ${error.message}`);
+      setNotice(`Gagal membatalkan status: ${error}`);
       return;
     }
+    attendanceWriteSeq.current += 1;
     deleteAttendanceSlices(id);
     setAttendanceDeleteTarget(null);
   }
@@ -1841,6 +1784,7 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
         onBack={() => setSettingsOpen(false)}
         onChangePassword={onChangePassword}
         onLateAttendance={onLateAttendance}
+        attendanceStartDate={prayerSchedule.attendanceStartDate}
         attendanceNotice={attendanceNotice}
         onDismissAttendanceNotice={onDismissAttendanceNotice}
         onLogout={onLogout}
@@ -1976,7 +1920,7 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
   );
 }
 
-function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, onChangePassword, onLateAttendance, attendanceNotice, onDismissAttendanceNotice, onLogout }) {
+function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, onChangePassword, onLateAttendance, attendanceStartDate, attendanceNotice, onDismissAttendanceNotice, onLogout }) {
   const [month, setMonth] = useState(() => {
     const current = new Date(todayKey + "T12:00:00");
     return new Date(current.getFullYear(), current.getMonth(), 1);
@@ -2060,7 +2004,9 @@ function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, on
               const record = attendanceByDate.get(date);
               const isHoliday = holidays.includes(date);
               const isToday = date === todayKey;
-              const canCorrect = !record && !isHoliday && date < todayKey;
+              // Same bounds as submit_late_attendance: start date <= date < today.
+              const canCorrect =
+                !record && !isHoliday && date >= attendanceStartDate && date < todayKey;
               const statusClass = record
                 ? record.status === "Haid"
                   ? "haid"
@@ -3488,6 +3434,10 @@ function SettingsPage({ onLogout, onChangePassword, prayerSchedule, scheduleRead
       setScheduleNotice("Jam selesai harus lebih akhir dari jam mulai.");
       return;
     }
+    if (!draftSchedule.attendanceStartDate) {
+      setScheduleNotice("Tanggal mulai absensi wajib diisi.");
+      return;
+    }
     setSavingSchedule(true);
     try {
       const error = await onSavePrayerSchedule(draftSchedule);
@@ -3551,6 +3501,25 @@ function SettingsPage({ onLogout, onChangePassword, prayerSchedule, scheduleRead
             />
           </label>
         </div>
+        <div className="schedule-times">
+          <label>
+            Tanggal mulai absensi
+            <input
+              type="date"
+              value={draftSchedule.attendanceStartDate || ""}
+              required
+              onChange={(event) =>
+                setDraftSchedule((current) => ({
+                  ...current,
+                  attendanceStartDate: event.target.value,
+                }))
+              }
+            />
+          </label>
+        </div>
+        <span className="muted">
+          Murid hanya dapat memperbaiki absensi mulai tanggal ini.
+        </span>
         {scheduleNotice && <p className="schedule-notice">{scheduleNotice}</p>}
         <button className="primary" type="submit" disabled={!scheduleReady || savingSchedule}>
           {savingSchedule ? "Menyimpan..." : "Simpan jadwal"}
