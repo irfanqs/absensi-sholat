@@ -26,6 +26,7 @@ import {
   updateStudent,
 } from "../lib/api";
 import { normalizeStudentName } from "../lib/admin-students";
+import { selectReportStudents } from "../lib/report-students";
 import {
   ArrowLeft,
   BookOpen,
@@ -2215,7 +2216,7 @@ function AdminApp(props) {
         )}
         {view === "reports" && (
           <ReportPage
-            students={students}
+            students={allStudents}
             history={history}
             classRanking={reportClassRanking}
             loading={reportLoading}
@@ -2550,12 +2551,18 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
   const [reportFilter, setReportFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showRanking, setShowRanking] = useState(false);
-  const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
   const referenceDate = new Date(`${selectedMonth}-01T12:00:00`);
   const rangeStart = `${selectedMonth}-01`;
   const rangeEnd = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0)
     .toISOString()
     .slice(0, 10);
+  // Active students plus deactivated ones with attendance this period; used for
+  // class options, percentages, the pending list and the xlsx export alike.
+  const periodStudents = useMemo(
+    () => selectReportStudents(students, history, { startDate: rangeStart, endDate: rangeEnd }),
+    [students, history, rangeStart, rangeEnd],
+  );
+  const classOptions = [...new Set(periodStudents.map((student) => student.className).filter(Boolean))].sort();
   const requestRange = useEffectEvent(onRangeChange);
   useEffect(() => {
     requestRange(rangeStart, rangeEnd, selectedClass);
@@ -2570,7 +2577,7 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
       })
       .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   }, [history, selectedMonth, selectedClass]);
-  const selectedStudents = students.filter(
+  const selectedStudents = periodStudents.filter(
     (student) => selectedClass === "Semua kelas" || student.className === selectedClass,
   );
   const periodDays = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0).getDate();
@@ -2637,7 +2644,7 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
     const subtitle = "SISWA-SISWI SMAN 9 SEMARANG";
 
     exportClasses.forEach((className) => {
-      const classStudents = students
+      const classStudents = periodStudents
         .filter((student) => student.className === className)
         .sort((first, second) => first.name.localeCompare(second.name, "id", { sensitivity: "base" }));
       const dates = periodDates;
