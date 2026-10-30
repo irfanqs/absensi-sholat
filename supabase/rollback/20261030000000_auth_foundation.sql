@@ -3,9 +3,40 @@
 -- and grants. The old "public can ..." policies are not touched.
 -- Data loss: students.auth_user_id, students.is_active, attendances.recorded_by and
 -- prayer_schedule.attendance_start_date are dropped with their values. After Tahap 2
--- this loses the student -> Auth user mapping (the Tahap 2 script can rebuild it).
+-- this loses the student -> Auth user mapping (the Tahap 2 script can rebuild it:
+-- migrate-auth-users tanpa --sync, laporan "ditautkan: <jumlah murid>"). Nonaktivasi
+-- murid (is_active = false) HILANG: setelah rollback semua murid kembali aktif di
+-- aplikasi lama; catat dulu daftar murid nonaktif bila perlu
+-- (select id, username from public.students where not is_active).
+--
+-- Urutan rollback (wajib):
+--   1. Vercel Instant Rollback ke deployment aplikasi lama (aplikasi baru memakai
+--      kolom dan fungsi yang dihapus file ini).
+--   2. Jika Tahap 4 sudah diterapkan: jalankan
+--      supabase/rollback/20261030000100_close_public_access.sql lebih dulu.
+--   3. Baru file ini.
+-- Preflight di bawah menolak berjalan selama Tahap 4 masih diterapkan.
+--
+-- Jalankan di luar jendela dzuhur (11:00-15:30 WIB). Jika gagal karena lock timeout
+-- atau deadlock, tidak ada yang berubah: jalankan ulang.
 
 begin;
+set local lock_timeout = '5s';
+
+-- ---------------------------------------------------------------------------
+-- Preflight
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if exists (
+    select 1 from pg_catalog.pg_attribute
+    where attrelid = 'public.students'::regclass
+      and attname = 'password_legacy'
+      and not attisdropped
+  ) then
+    raise exception 'Tahap 4 masih diterapkan (kolom students.password_legacy ada). Jalankan dulu supabase/rollback/20261030000100_close_public_access.sql, lalu file ini.';
+  end if;
+end $$;
 
 -- Policies first: they depend on the helper functions.
 drop policy if exists "auth: read students" on public.students;

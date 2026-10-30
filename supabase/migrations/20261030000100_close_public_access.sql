@@ -10,7 +10,12 @@
 -- Paste the whole file into the Supabase SQL Editor; it runs in one transaction, so
 -- any failure leaves the database unchanged. It takes exclusive locks on the app
 -- tables while the app is live; lock_timeout makes it fail fast instead of queueing
--- behind long requests. If it times out, run it again.
+-- behind long requests.
+--
+-- Waktu menjalankan: di luar jendela dzuhur (jangan antara 11:00-15:30 WIB), saat murid
+-- tidak sedang absen. Jika gagal dengan "canceling statement due to lock timeout" atau
+-- "deadlock detected", tidak ada yang berubah (satu transaksi): cukup jalankan ulang
+-- file ini beberapa saat kemudian.
 --
 -- Not reversible by the rollback: sync_changes rows that contain a password are
 -- deleted here.
@@ -61,6 +66,16 @@ drop policy if exists "public can read sync changes" on public.sync_changes;
 revoke all on table
   public.students, public.attendances, public.holidays, public.prayer_schedule, public.sync_changes
   from anon;
+
+-- PUBLIC (every role) gets nothing either; Supabase normally grants it nothing here,
+-- this makes sure of it.
+revoke all on table
+  public.students, public.attendances, public.holidays, public.prayer_schedule, public.sync_changes
+  from public;
+
+-- sync_changes ids are only drawn by the security definer trigger (as the owner);
+-- API roles never need the sequence.
+revoke all on sequence public.sync_changes_id_seq from anon, authenticated;
 
 revoke insert, update, delete, truncate, references, trigger on table
   public.students, public.attendances, public.holidays, public.prayer_schedule, public.sync_changes

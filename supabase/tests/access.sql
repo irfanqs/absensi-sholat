@@ -272,6 +272,31 @@ begin
   end if;
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- no_public_or_sequence_grants (postgres)
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  t text;
+  r text;
+begin
+  foreach t in array array['students', 'attendances', 'holidays', 'prayer_schedule', 'sync_changes'] loop
+    if exists (
+      select 1 from pg_catalog.pg_class c, aclexplode(c.relacl) a
+      where c.oid = format('public.%I', t)::regclass and a.grantee = 0
+    ) then
+      raise exception 'no_public_or_sequence_grants: PUBLIC has a grant on %', t;
+    end if;
+  end loop;
+  foreach r in array array['anon', 'authenticated'] loop
+    if has_sequence_privilege(r, 'public.sync_changes_id_seq', 'USAGE')
+       or has_sequence_privilege(r, 'public.sync_changes_id_seq', 'SELECT')
+       or has_sequence_privilege(r, 'public.sync_changes_id_seq', 'UPDATE') then
+      raise exception 'no_public_or_sequence_grants: % still has a privilege on sync_changes_id_seq', r;
+    end if;
+  end loop;
+end $$;
+
 do $$ begin raise notice 'access.sql: ALL PASSED'; end $$;
 
 rollback;

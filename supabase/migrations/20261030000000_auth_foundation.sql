@@ -13,10 +13,24 @@
 --   select lower(username), count(*) from public.students
 --   group by lower(username) having count(*) > 1;
 --
--- Behaviour change for the old app: deleting a student who has attendance history
--- now fails (foreign key on delete restrict) instead of deleting the history.
+-- Waktu menjalankan: di luar jendela dzuhur (jangan antara 11:00-15:30 WIB). Migrasi ini
+-- mengambil lock eksklusif pada tabel aplikasi; lock_timeout membuatnya gagal cepat
+-- daripada mengantre di belakang request yang lama. Jika gagal dengan "canceling
+-- statement due to lock timeout" atau "deadlock detected", tidak ada yang berubah (satu
+-- transaksi): cukup jalankan ulang file ini beberapa saat kemudian.
+--
+-- Efek pada aplikasi LAMA selama Tahap 1-3 (diharapkan, bukan insiden):
+--   - Username kini unik tanpa membedakan huruf besar/kecil (indeks lower(username)).
+--     Menambah murid dengan username yang hanya beda huruf besar/kecil dari murid lain
+--     (mis. 9A_Ahmad vs 9a_ahmad) gagal dengan error duplikat; impor Excel di aplikasi
+--     lama melewati baris seperti itu tanpa pesan.
+--   - Menghapus murid yang punya riwayat absensi kini gagal di database (foreign key
+--     on delete restrict), bukan ikut menghapus riwayatnya. UI lama bisa tetap
+--     menyembunyikan murid itu sampai halaman dimuat ulang, lalu murid muncul lagi.
+--     Data aman; murid tersebut dinonaktifkan nanti lewat UI admin baru.
 
 begin;
+set local lock_timeout = '5s';
 
 -- ---------------------------------------------------------------------------
 -- Columns, constraints, indexes

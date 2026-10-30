@@ -2,8 +2,9 @@
 -- Restores the pre-Tahap-4 state: the 14 "public can ..." policies (identical to
 -- supabase/schema.sql), full table privileges for anon and authenticated, realtime
 -- publication of students/attendances/holidays, the old capture_sync_change (full
--- row copy), the old get_monthly_class_prayer_ranking (callable by anon), and the
--- column name students.password. Tahap 1 objects are left in place.
+-- row copy), the old get_monthly_class_prayer_ranking (callable by anon), the
+-- anon/authenticated grants on sync_changes_id_seq, and the column name
+-- students.password. Tahap 1 objects are left in place.
 --
 -- NOT restored:
 --   - sync_changes rows that contained a password were deleted by the migration and
@@ -194,6 +195,11 @@ revoke all on table
 grant all on table
   public.students, public.attendances, public.holidays, public.prayer_schedule, public.sync_changes
   to anon, authenticated;
+
+-- Sequence grants as before Tahap 4 (staging audit: anon=rwU, authenticated=rwU,
+-- i.e. usage, select, update). PUBLIC had no table grants before Tahap 4, so the
+-- migration's revoke from public needs no restore.
+grant all on sequence public.sync_changes_id_seq to anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- The 14 old policies, identical to supabase/schema.sql.
