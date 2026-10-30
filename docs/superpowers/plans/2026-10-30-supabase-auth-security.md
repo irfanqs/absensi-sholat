@@ -361,7 +361,7 @@ git commit -m "feat: add migration closing anonymous table access"
 
 **Interfaces:**
 - Consumes: `usernameToEmail`, `toAuthPassword` dari `lib/auth.js`.
-- Produces: CLI `node --env-file=<file> scripts/migrate-auth-users.mjs [--dry-run] [--sync] --confirm-ref=<ref>`. Env: `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+- Produces: CLI `node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file=<file> scripts/migrate-auth-users.mjs [--dry-run] [--sync --before-tahap3] --confirm-ref=<ref>` (`--sync` tanpa `--before-tahap3` ditolak, lihat Task 13). Env: `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
   - Tanpa `--confirm-ref` yang sama dengan ref di URL → exit 1 sebelum request apa pun. `--dry-run` tidak butuh `--confirm-ref`.
   - Membaca semua siswa (paging 1000, kolom `id, username, password, is_active, auth_user_id`; setelah Tahap 4 kolomnya `password_legacy` — deteksi otomatis lewat error kolom).
   - Membangun peta email → user dari `auth.admin.listUsers` (paging) sekali di awal.
@@ -628,36 +628,86 @@ git commit -m "test: add security verification script and staging evidence"
 
 ### Task 11: Production Tahap 0 dan Tahap 1
 
+Semua perintah `node` di Task 11–15 dijalankan dari root repo dengan Node ≥ 20 dan selalu dengan flag `node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file=<file env>` (supabase-js butuh WebSocket bawaan; `lib/auth.js` adalah ESM di package tanpa `type`).
+
 - [ ] **Step 1: STOP — minta konfirmasi pemilik untuk memulai production.**
-- [ ] **Step 2: Backup.** Pemilik menjalankan `pg_dump "<URL production>" --schema=public --schema=auth -Fc -f backup-sebelum-auth.dump` dan menyimpan file di luar repo.
-- [ ] **Step 3: Cek read-only (pemilik menjalankan di SQL Editor):** `select status, count(*) from attendances group by 1;` (hanya `Hadir`, `Terlambat`, `Haid`), `select time from attendances order by created_at desc limit 5;` (format `HH.MM`), `select conname from pg_constraint where conrelid = 'public.attendances'::regclass and contype = 'f';` (`attendances_student_id_fkey`). Catat rate limit sign-in di Authentication → Rate Limits. Matikan "Allow new users to sign up".
-- [ ] **Step 4: STOP — konfirmasi menjalankan migrasi Tahap 1.** Pemilik menempel `supabase/migrations/20261030000000_auth_foundation.sql` ke SQL Editor production dan menjalankan.
+- [ ] **Step 2: Backup.** Dump ditulis ke path absolut **di luar repo** (`*.dump` juga di-gitignore sebagai pengaman):
+
+```bash
+mkdir -p ~/Documents/backup-absensi
+pg_dump "<URL production>" --schema=public --schema=auth -Fc \
+  -f ~/Documents/backup-absensi/backup-sebelum-auth-$(date +%Y%m%d-%H%M).dump
+```
+
+Dump ini berisi password siswa plaintext: simpan hanya di Mac pemilik, jangan diunggah atau dibagikan.
+- [ ] **Step 3: Cek read-only dan Dashboard Auth (pemilik).**
+  - SQL Editor: `select status, count(*) from attendances group by 1;` (hanya `Hadir`, `Terlambat`, `Haid`), `select time from attendances order by created_at desc limit 5;` (format `HH.MM`), `select conname from pg_constraint where conrelid = 'public.attendances'::regclass and contype = 'f';` (`attendances_student_id_fkey`), `select lower(username), count(*) from students group by 1 having count(*) > 1;` (0 baris).
+  - Authentication → Rate Limits: **naikkan** (bukan hanya catat) batas "sign-ups and sign-ins" dan "token refreshes" sebelum Tahap 3. Batas ini per alamat IP; bila banyak murid absen lewat Wi-Fi sekolah, mereka keluar dari satu IP publik (NAT bersama) dan bisa kena 429 pada jam dzuhur. **Tanyakan ke sekolah apakah murid absen lewat Wi-Fi sekolah**; bila ya, pasang batas setinggi yang diizinkan plan (mis. sign-in ≥ jumlah murid per 5 menit). Catat nilai lama dan baru di evidence. App menampilkan `Terlalu banyak percobaan atau koneksi bermasalah. Coba lagi sebentar.` untuk 429/gangguan jaringan.
+  - Authentication → Providers/Settings, pastikan: "Allow new users to sign up" **mati**, "Allow anonymous sign-ins" **mati**, "Secure email change" **aktif**.
+- [ ] **Step 4: STOP — konfirmasi menjalankan migrasi Tahap 1.** Waktu: **di luar 11:00–15:30 WIB** (bukan jendela dzuhur). Pemilik menempel `supabase/migrations/20261030000000_auth_foundation.sql` ke SQL Editor production dan menjalankan. Bila gagal dengan `canceling statement due to lock timeout` atau `deadlock detected`: tidak ada yang berubah (satu transaksi, `lock_timeout = 5s`), cukup jalankan ulang beberapa saat kemudian.
 - [ ] **Step 5: Verifikasi.** `select count(*) from pg_proc where proname in ('submit_attendance','submit_late_attendance','admin_mark_attendance','admin_delete_attendance','admin_set_holiday','admin_set_prayer_schedule')` = 6. Pemilik membuka app production (masih versi lama): login siswa, absen, dashboard guru jalan. Catat di `docs/superpowers/evidence/production.md`.
-- [ ] **Rollback bila gagal:** jalankan `supabase/rollback/20261030000000_auth_foundation.sql`.
+- [ ] **Efek yang diharapkan di app lama selama Tahap 1–3 (bukan insiden, beri tahu guru):**
+  - Username kini unik tanpa membedakan huruf besar/kecil. Menambah murid yang username-nya hanya beda huruf besar/kecil dari murid lain gagal dengan error duplikat; impor Excel di app lama melewati baris seperti itu tanpa pesan.
+  - Menghapus murid yang punya riwayat absensi gagal di database (foreign key `restrict`), tetapi UI lama bisa tetap menyembunyikannya sampai halaman dimuat ulang. Data aman; nonaktifkan murid itu nanti lewat UI admin baru.
+- [ ] **Rollback bila gagal:** ikuti urutan di header `supabase/rollback/20261030000000_auth_foundation.sql` (Vercel Instant Rollback bila app baru sudah live → rollback Tahap 4 bila sudah diterapkan → file ini). Preflight-nya menolak berjalan selama Tahap 4 masih diterapkan. Nonaktivasi murid (`is_active`) hilang; tautan Auth (`auth_user_id`) dibangun ulang dengan `migrate-auth-users` mode default (laporan `ditautkan: <jumlah murid>`). Waktu dan aturan ulang sama seperti Step 4.
 
 ### Task 12: Production Tahap 2
 
 - [ ] **Step 1: STOP — konfirmasi.** Pemilik membuat `.env.production.local` (di-gitignore) berisi URL dan service role production.
-- [ ] **Step 2:** `node --env-file=.env.production.local scripts/migrate-auth-users.mjs --dry-run` → `akan dibuat: <jumlah siswa>`.
-- [ ] **Step 3:** Pemilik menjalankan dengan `--confirm-ref=<ref production>` di terminalnya sendiri (password guru hanya tampil di sana) dan menyimpan password guru.
-- [ ] **Step 4: Verifikasi:** `select count(*) from students where auth_user_id is null` = 0; login contoh 3 siswa lewat `signInWithUsername` berhasil. Catat di evidence.
+- [ ] **Step 2: Dry-run.**
+
+```bash
+node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \
+  --env-file=.env.production.local scripts/migrate-auth-users.mjs --dry-run
+```
+
+Expected: `akan dibuat: <jumlah siswa>`, `gagal: 0`.
+- [ ] **Step 3: Tepat sebelum menjalankan sungguhan,** pemilik memastikan:
+  - SQL Editor: `select count(*) from auth.users` = **0** (tidak ada akun Auth asing yang bisa ditautkan).
+  - Dry-run Step 2 diulang: `akan ditautkan: 0` dan `guru: akan dibuat`. Bila tidak, STOP dan periksa manual. Script hanya menautkan akun Auth yang `app_metadata`-nya `role: "student"` dengan `student_id` murid itu, dan hanya menganggap guru ada bila `role: "admin"`; selain itu dilaporkan sebagai gagal.
+- [ ] **Step 4:** Pemilik menjalankan di terminalnya sendiri (password guru hanya tampil di sana) dan menyimpan password guru:
+
+```bash
+node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \
+  --env-file=.env.production.local scripts/migrate-auth-users.mjs --confirm-ref=<ref production>
+```
+
+- [ ] **Step 5: Verifikasi:** `select count(*) from students where auth_user_id is null` = 0; `supabase/checks/auth_integrity.sql` → 0 baris; login contoh 3 siswa lewat `signInWithUsername` berhasil. Catat di evidence.
 - [ ] **Rollback:** hapus user Auth dengan `app_metadata.role = 'student'` lewat admin API, `update students set auth_user_id = null`.
 
 ### Task 13: Production Tahap 3 (deploy)
 
 - [ ] **Step 1: STOP — konfirmasi waktu deploy** (Jumat sore atau akhir pekan).
-- [ ] **Step 2:** Pemilik mengisi `SUPABASE_SERVICE_ROLE_KEY` di env **Production** Vercel.
-- [ ] **Step 3:** Jalankan script Tahap 2 tanpa flag lalu dengan `--sync` (production, konfirmasi ref).
-- [ ] **Step 4: STOP — konfirmasi merge PR.** Merge; tunggu deploy Vercel selesai.
-- [ ] **Step 5: Verifikasi:** checklist manual Task 7–9 di production dengan akun siswa uji dan guru; `node --env-file=.env.local scripts/verify-security.mjs --phase=before --read-only` masih PASS (akses lama belum ditutup). Pantau log Supabase (Auth dan Postgres) di jam dzuhur pertama. Catat di evidence.
+- [ ] **Step 2:** Pemilik mengisi `SUPABASE_SERVICE_ROLE_KEY` di env **Production** Vercel dan mengecek Project Settings → Node.js Version **≥ 22** (default 24; supabase-js butuh WebSocket bawaan).
+- [ ] **Step 3: Sinkron terakhir sebelum merge** (menangkap murid baru, ganti password, dan ganti username di app lama sejak Tahap 2):
+
+```bash
+node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \
+  --env-file=.env.production.local scripts/migrate-auth-users.mjs --confirm-ref=<ref production>
+node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \
+  --env-file=.env.production.local scripts/migrate-auth-users.mjs --sync --before-tahap3 \
+  --confirm-ref=<ref production>
+```
+
+**PERINGATAN `--sync`:** hanya boleh sebelum merge. Setelah Tahap 3 murid mengganti password lewat Supabase Auth dan kolom password lama menjadi basi; `--sync` akan menimpa password baru mereka. Script menolak `--sync` tanpa `--before-tahap3`. Jangan pernah menulis `--before-tahap3` setelah Tahap 3 live, termasuk saat roll-forward.
+- [ ] **Step 4: Cek integritas.** SQL Editor: jalankan `supabase/checks/auth_integrity.sql` → harus **0 baris**. Bila ada baris, perbaiki dulu (Lampiran runbook: "Memperbaiki ketidakcocokan Auth ↔ students"), lalu ulangi cek.
+- [ ] **Step 5: STOP — konfirmasi merge PR.** Merge; tunggu deploy Vercel selesai.
+- [ ] **Step 6: Verifikasi:** checklist manual Task 7–9 (`docs/superpowers/evidence/manual-checklist.md`) di production dengan akun siswa uji dan guru; `node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file=.env.local scripts/verify-security.mjs --phase=before --read-only` masih PASS (akses lama belum ditutup). Pantau log Supabase (Auth dan Postgres) di jam dzuhur pertama, terutama 429 di log Auth. Catat di evidence.
 - [ ] **Rollback:** Instant Rollback di Vercel ke deployment sebelumnya.
+- [ ] **Roll-forward setelah Instant Rollback:** selama app lama aktif lagi, murid bisa mengganti password, guru bisa menambah atau mengganti username murid di app lama. Sebelum deploy ulang app baru:
+  - Jalankan `migrate-auth-users` **mode default** (tanpa `--sync`) untuk murid baru, lalu `supabase/checks/auth_integrity.sql` → 0 baris (perbaiki ganti username lewat Lampiran).
+  - Murid yang mengganti password di app lama selama jendela rollback: **reset per murid lewat UI admin** (Data Murid → Reset password) setelah app baru live lagi. **Jangan `--sync`**: itu juga menimpa password yang sudah diganti murid lain lewat app baru sebelum rollback.
 
 ### Task 14: Production Tahap 4 (minimal 3 hari sekolah setelah Task 13 stabil)
 
 - [ ] **Step 1: STOP — konfirmasi.**
-- [ ] **Step 2:** Pemilik menjalankan `supabase/migrations/20261030000100_close_public_access.sql` di SQL Editor production.
-- [ ] **Step 3: Verifikasi:** `node --env-file=.env.local scripts/verify-security.mjs --phase=after --student=<akun uji>:<password>` → semua PASS (tanpa `--trigger-with-service-role`). Pemilik mengecek login, absen, dan dashboard guru. Catat di evidence.
-- [ ] **Rollback:** `supabase/rollback/20261030000100_close_public_access.sql`.
+- [ ] **Step 2: Cek sebelum Tahap 4 (selama Tahap 1–3 anon masih bisa mengubah `auth_user_id`/`is_active`):**
+  - SQL Editor: `supabase/checks/auth_integrity.sql` → harus **0 baris**.
+  - `node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file=.env.production.local scripts/migrate-auth-users.mjs --dry-run` (mode default, **tanpa `--sync`**) → `akan dibuat: 0`, `gagal: 0`.
+  - Bila salah satu tidak sesuai: perbaiki lewat Lampiran runbook, ulangi cek.
+- [ ] **Step 3:** Waktu: **di luar 11:00–15:30 WIB**. Pemilik menjalankan `supabase/migrations/20261030000100_close_public_access.sql` di SQL Editor production. Bila gagal dengan `canceling statement due to lock timeout` atau `deadlock detected`: tidak ada yang berubah, jalankan ulang beberapa saat kemudian.
+- [ ] **Step 4: Verifikasi:** `node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file=.env.local scripts/verify-security.mjs --phase=after --student=<akun uji>:<password>` → semua PASS (tanpa `--trigger-with-service-role`). Pemilik mengecek login, absen, dan dashboard guru. Catat di evidence.
+- [ ] **Rollback:** `supabase/rollback/20261030000100_close_public_access.sql` (waktu dan aturan ulang sama seperti Step 3). Bila Tahap 1 juga harus di-rollback, urutannya: Vercel Instant Rollback → rollback Tahap 4 → rollback Tahap 1.
 
 ### Task 15: Production Tahap 5 (minimal 2 minggu setelah Task 14)
 
@@ -665,6 +715,35 @@ git commit -m "test: add security verification script and staging evidence"
 - Create: `supabase/migrations/20261030000200_drop_legacy_password.sql`
 - Modify: `supabase/schema.sql` (mencerminkan kondisi akhir: kolom, policy, RPC, publication), `deploy/README.md` (tandai usang; produksi di Vercel), `scripts/migrate-auth-users.mjs` (hapus dukungan kolom password)
 
-- [ ] **Step 1:** Tulis migrasi (`alter table public.students drop column password_legacy;`), perbarui `schema.sql`, lalu uji di staging: database staging dikosongkan, `schema.sql` baru dijalankan, `rpc.sql` dan `access.sql` PASS.
-- [ ] **Step 2: Commit dan STOP — konfirmasi push/PR dan menjalankan migrasi di production.**
-- [ ] **Step 3:** Setelah dijalankan: `verify-security.mjs --phase=after` PASS. Sarankan pemilik menghapus dump lama berisi password plaintext (`supabase-backup/`, `backup-sebelum-auth.dump`) setelah backup baru dibuat.
+- [ ] **Step 1:** Tulis migrasi (`begin; set local lock_timeout = '5s'; alter table public.students drop column password_legacy; commit;`), perbarui `schema.sql`, lalu uji di staging: database staging dikosongkan, `schema.sql` baru dijalankan, `rpc.sql` dan `access.sql` PASS.
+- [ ] **Step 2: Commit dan STOP — konfirmasi push/PR dan menjalankan migrasi di production.** Waktu: di luar 11:00–15:30 WIB; bila gagal karena lock timeout atau deadlock, jalankan ulang.
+- [ ] **Step 3:** Setelah dijalankan: `node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file=.env.local scripts/verify-security.mjs --phase=after` PASS. Sarankan pemilik menghapus dump lama berisi password plaintext (`supabase-backup/`, `~/Documents/backup-absensi/backup-sebelum-auth-*.dump`) setelah backup baru dibuat.
+
+### Lampiran runbook
+
+**Memperbaiki ketidakcocokan Auth ↔ students** (baris dari `supabase/checks/auth_integrity.sql`). Lihat detail baris dengan `select id, username, auth_user_id, is_active from students where id in (...)` dan `select id, email, raw_app_meta_data from auth.users where id in (...)`.
+
+- `auth_user_id` kosong (murid ditambah di app lama setelah Tahap 2): jalankan `migrate-auth-users` mode default (tanpa `--sync`); ia membuat dan menautkan akunnya.
+- Email tidak sama dengan `lower(username)@absensi-sholat.local` (username diganti di app lama setelah Tahap 2): ganti email Auth. `PATCH /api/admin/students/<id>` hanya mengubah email bila username berubah, jadi pakai service role langsung:
+
+```bash
+node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \
+  --env-file=.env.production.local --input-type=module -e '
+import { createClient } from "@supabase/supabase-js";
+const s = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+const { error } = await s.auth.admin.updateUserById("<auth_user_id>", { email: "<username huruf kecil>@absensi-sholat.local", email_confirm: true });
+console.log(error ? error.message : "OK");'
+```
+
+- `app_metadata` (`role`/`student_id`) tidak cocok: jangan diperbaiki otomatis. Periksa manual siapa pemilik akun itu; jangan pernah memakai `--sync` setelah Tahap 3 untuk memperbaiki apa pun.
+
+**Mengaktifkan kembali murid yang dinonaktifkan** (UI belum punya tombolnya). SQL Editor: `update public.students set is_active = true where id = '<id>' returning auth_user_id;`, lalu cabut ban Auth-nya:
+
+```bash
+node --experimental-websocket --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \
+  --env-file=.env.production.local --input-type=module -e '
+import { createClient } from "@supabase/supabase-js";
+const s = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+const { error } = await s.auth.admin.updateUserById("<auth_user_id>", { ban_duration: "none" });
+console.log(error ? error.message : "OK");'
+```

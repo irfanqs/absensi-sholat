@@ -132,7 +132,8 @@ Semua perubahan aditif kecuali yang ditandai Tahap 4/5.
 1. `supabase.auth.signInWithPassword({ email, password })`.
 2. Role dibaca dari `session.user.app_metadata.role` (`admin` atau `student`).
 3. Siswa mengambil profilnya: `students` dengan `auth_user_id = auth.uid()`, kolom `id, nis, name, class_name, gender, username`.
-4. Gagal → "Username atau password belum sesuai." (pesan sama seperti sekarang).
+4. Gagal karena kredensial salah (`AuthApiError` 400 `invalid_credentials`, termasuk username tidak valid, user diblokir) → "Username atau password belum sesuai." (pesan sama seperti sekarang).
+5. Gagal karena rate limit (429), jaringan (`AuthRetryableFetchError`, status 0) atau server (5xx) → "Terlalu banyak percobaan atau koneksi bermasalah. Coba lagi sebentar." (`E_LOGIN_RETRY` di `lib/auth.js`), supaya siswa tidak mengira password-nya salah.
 
 ### Sesi
 
@@ -143,9 +144,10 @@ Semua perubahan aditif kecuali yang ditandai Tahap 4/5.
 
 Saat app baru dibuka dan belum ada sesi Supabase:
 
-- `dzuhur-session` berisi siswa dengan `username` dan `password` → login diam-diam. Berhasil atau gagal, data lama dihapus; gagal berarti tampil halaman login.
+- `dzuhur-session` berisi siswa dengan `username` dan `password` → login diam-diam. Berhasil atau ditolak (kredensial salah), data lama dihapus; ditolak berarti tampil halaman login.
+- Gagal sementara (rate limit, jaringan, 5xx): `dzuhur-session` **disimpan** agar pemuatan berikutnya mencoba lagi, kunci lama lainnya tetap dihapus, dan halaman login menampilkan pesan `E_LOGIN_RETRY`. Login manual yang berhasil menghapus `dzuhur-session`.
 - `dzuhur-session` admin → dihapus, tampil halaman login.
-- Selalu hapus: `dzuhur-session`, `dzuhur-teacher-password`, `dzuhur-supabase-cache-v2`, `dzuhur-students`, `dzuhur-attendances`, `dzuhur-holidays`, `dzuhur-prayer-schedule`.
+- Selalu hapus (kecuali `dzuhur-session` pada gagal sementara): `dzuhur-session`, `dzuhur-teacher-password`, `dzuhur-supabase-cache-v2`, `dzuhur-students`, `dzuhur-attendances`, `dzuhur-holidays`, `dzuhur-prayer-schedule`.
 
 ### Ganti password (siswa dan guru)
 
@@ -158,8 +160,8 @@ Saat app baru dibuka dan belum ada sesi Supabase:
 
 ### Dashboard Auth (staging dan production)
 
-- "Allow new users to sign up" dimatikan.
-- Catat batas rate limit sign-in sebelum Tahap 3.
+- "Allow new users to sign up" dimatikan; "Allow anonymous sign-ins" dimatikan; "Secure email change" aktif.
+- Sebelum Tahap 3, **naikkan** (bukan hanya catat) batas rate limit sign-in dan token refresh. Batas ini per IP; tanyakan ke sekolah apakah murid absen lewat Wi-Fi sekolah (satu IP publik lewat NAT bersama), karena itu membuat ratusan murid berbagi satu kuota pada jam dzuhur.
 
 ## 9. RLS dan RPC
 
@@ -272,7 +274,8 @@ File: `supabase/migrations/<YYYYMMDDHHMMSS>_auth_foundation.sql`, rollback `supa
 
 - `--dry-run`: hanya laporan.
 - Default: untuk setiap siswa tanpa `auth_user_id`, `auth.admin.createUser({ email, password: "absensi:" + password, email_confirm: true, app_metadata: { role: "student", student_id } })`, lalu isi `auth_user_id`. Idempoten.
-- `--sync`: tambahan, set ulang password Auth dari kolom `password` untuk siswa yang sudah punya akun.
+- `--sync --before-tahap3`: tambahan, set ulang password Auth dari kolom `password` untuk siswa yang sudah punya akun. Hanya sebelum Tahap 3; script menolak `--sync` tanpa `--before-tahap3`, karena setelah Tahap 3 kolom itu basi dan `--sync` akan menimpa password yang diganti siswa lewat Auth.
+- Akun Auth yang sudah ada hanya ditautkan bila `app_metadata.role = "student"` dan `app_metadata.student_id` = id siswa itu; akun `guru` dianggap ada hanya bila `role = "admin"`. Selain itu dilaporkan gagal untuk diperiksa manual.
 - Membuat akun `guru` jika belum ada, dengan password acak yang hanya dicetak sekali ke terminal.
 - Verifikasi: jumlah user Auth role student = jumlah siswa aktif; login contoh beberapa siswa berhasil.
 - Rollback: hapus user Auth yang dibuat script, `update students set auth_user_id = null`.
@@ -280,18 +283,19 @@ File: `supabase/migrations/<YYYYMMDDHHMMSS>_auth_foundation.sql`, rollback `supa
 ### Tahap 3: deploy app baru (Jumat sore atau akhir pekan)
 
 1. Isi `SUPABASE_SERVICE_ROLE_KEY` di env Production Vercel.
-2. Jalankan script Tahap 2 tanpa flag, lalu dengan `--sync`.
+2. Jalankan script Tahap 2 tanpa flag, lalu dengan `--sync --before-tahap3`, lalu `supabase/checks/auth_integrity.sql` (harus 0 baris).
 3. Merge PR; Vercel deploy otomatis.
 
 - Verifikasi: login siswa (termasuk auto-migrasi), absen, koreksi, dashboard dan realtime admin, rekap, export, ranking, import, reset password, nonaktifkan. Pantau log Supabase pada jam dzuhur pertama.
-- Rollback: Instant Rollback di Vercel. Policy lama masih ada sehingga app lama langsung berfungsi; absensi dari app baru tetap terbaca.
+- Rollback: Instant Rollback di Vercel. Policy lama masih ada sehingga app lama langsung berfungsi; absensi dari app baru tetap terbaca. Roll-forward sesudahnya: script mode default + cek integritas; password yang diganti di app lama selama jendela rollback di-reset per siswa lewat UI admin, bukan `--sync`.
 
 ### Tahap 4: tutup akses lama (minimal 3 hari sekolah setelah Tahap 3 stabil)
 
 File: `supabase/migrations/<YYYYMMDDHHMMSS>_close_public_access.sql`, rollback `supabase/rollback/<YYYYMMDDHHMMSS>_close_public_access.sql`.
 
 - Drop semua policy `public can ...`.
-- `revoke all` di semua tabel aplikasi dari `anon`; `revoke insert, update, delete, truncate` dari `authenticated`; column grant `students`.
+- `revoke all` di semua tabel aplikasi dari `anon` dan `public`; `revoke insert, update, delete, truncate` dari `authenticated`; column grant `students`; `revoke all on sequence sync_changes_id_seq from anon, authenticated` (rollback mengembalikan grant sequence itu).
+- Dijalankan di luar jendela dzuhur dengan `lock_timeout`; bila lock timeout atau deadlock, jalankan ulang.
 - Keluarkan `students`, `attendances`, `holidays` dari `supabase_realtime`.
 - Perbarui `capture_sync_change`; hapus baris `sync_changes` yang berisi password.
 - `alter table students rename column password to password_legacy`; cabut semua grant kolom itu.
@@ -333,5 +337,6 @@ File: `supabase/migrations/<YYYYMMDDHHMMSS>_close_public_access.sql`, rollback `
 ### Dimitigasi
 
 - Lonjakan login saat cutover: auto-migrasi sesi lama, deploy di luar jam sekolah, cek batas rate limit Auth.
-- Siswa yang mengganti password atau ditambahkan lewat app lama antara Tahap 2 dan 3: script dijalankan ulang dengan `--sync` sesaat sebelum merge.
+- Siswa yang mengganti password atau ditambahkan lewat app lama antara Tahap 2 dan 3: script dijalankan ulang (default, lalu `--sync --before-tahap3`) sesaat sebelum merge.
+- Ketidakcocokan Auth ↔ `students` (username diganti di app lama, atau anon mengubah `auth_user_id`/`is_active` sebelum Tahap 4): `supabase/checks/auth_integrity.sql` wajib 0 baris sebelum merge dan sebelum Tahap 4.
 - Salah koneksi ke production saat pengembangan: semua perintah staging memeriksa bahwa host tidak mengandung ref project production.
