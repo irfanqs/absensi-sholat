@@ -33,15 +33,6 @@ Murid cukup login lalu memindai satu QR permanen yang ditempel di area sholat. Q
 | ESLint | 9.39.5 | Linting |
 | eslint-config-next | 16.3.0 | Konfigurasi lint Next.js |
 
-## Akun demo
-
-| Role | Username | Password |
-| --- | --- | --- |
-| Guru/admin | `guru` | `123` |
-| Murid | `9A_Irfan` | `123` |
-
-Data contoh mencakup 40 murid dari kelas 9A sampai 9D. Lihat [data/dummy-students.csv](data/dummy-students.csv).
-
 ## Supabase dan Vercel
 
 Aplikasi sudah memiliki client Supabase dan schema database di [supabase/schema.sql](supabase/schema.sql). Untuk mengaktifkan penyimpanan terpusat:
