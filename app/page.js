@@ -35,6 +35,8 @@ import {
   CheckCircle,
   ClipboardText,
   DownloadSimple,
+  Eye,
+  EyeSlash,
   Gear,
   House,
   List,
@@ -1530,9 +1532,8 @@ function Login({ notice, onLogin, pending }) {
           </label>
           <label>
             Password
-            <input
+            <PasswordInput
               name="password"
-              type="password"
               autoComplete="current-password"
               placeholder="Masukkan password"
               required
@@ -3586,6 +3587,24 @@ function SettingsPage({ onLogout, onChangePassword, prayerSchedule, scheduleRead
   );
 }
 
+function PasswordInput(props) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <span className="password-field">
+      <input {...props} type={visible ? "text" : "password"} />
+      <button
+        type="button"
+        aria-label={visible ? "Sembunyikan password" : "Tampilkan password"}
+        aria-pressed={visible}
+        onClick={() => setVisible((current) => !current)}
+      >
+        {visible ? <EyeSlash size={20} /> : <Eye size={20} />}
+      </button>
+    </span>
+  );
+}
+
 function PasswordModal({ role, onClose, onChangePassword }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -3624,15 +3643,15 @@ function PasswordModal({ role, onClose, onChangePassword }) {
         </div>
         <label>
           Password saat ini
-          <input name="currentPassword" type="password" required autoComplete="current-password" />
+          <PasswordInput name="currentPassword" required autoComplete="current-password" />
         </label>
         <label>
           Password baru
-          <input name="newPassword" type="password" required autoComplete="new-password" />
+          <PasswordInput name="newPassword" required autoComplete="new-password" />
         </label>
         <label>
           Konfirmasi password baru
-          <input name="confirmation" type="password" required autoComplete="new-password" />
+          <PasswordInput name="confirmation" required autoComplete="new-password" />
         </label>
         {error && <p className="form-error">{error}</p>}
         <div className="modal-actions">
@@ -3746,11 +3765,11 @@ function ResetPasswordModal({ student, onClose, onReset }) {
         </div>
         <label>
           Password baru
-          <input name="newPassword" type="password" required autoComplete="new-password" />
+          <PasswordInput name="newPassword" required autoComplete="new-password" />
         </label>
         <label>
           Konfirmasi password baru
-          <input name="confirmation" type="password" required autoComplete="new-password" />
+          <PasswordInput name="confirmation" required autoComplete="new-password" />
         </label>
         {error && <p className="form-error">{error}</p>}
         <div className="modal-actions">
