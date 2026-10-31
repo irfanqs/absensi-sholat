@@ -32,6 +32,8 @@ import {
   ArrowLeft,
   BookOpen,
   CalendarBlank,
+  CaretLeft,
+  CaretRight,
   CheckCircle,
   ClipboardText,
   DownloadSimple,
@@ -77,6 +79,7 @@ const ADMIN_ACTIVITY_WRITE_MS = 60 * 1000;
 const DEFAULT_STUDENT_PASSWORD = "123";
 // Matches the admin import route's per-request limit.
 const IMPORT_BATCH_SIZE = 100;
+const PAGE_SIZE = 50;
 
 function normalizeImportHeader(value) {
   return String(value || "")
@@ -450,6 +453,63 @@ function Logo() {
         Absensi<span>Sholat</span>
       </span>
     </div>
+  );
+}
+
+// Returns one page of `items`; the page resets to 1 whenever `resetKey` changes
+// (filter or search) and is clamped when the list shrinks.
+function usePagination(items, resetKey) {
+  const [state, setState] = useState({ page: 1, resetKey });
+  const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const page = Math.min(state.resetKey === resetKey ? state.page : 1, pageCount);
+  const offset = (page - 1) * PAGE_SIZE;
+  return {
+    items: items.slice(offset, offset + PAGE_SIZE),
+    offset,
+    page,
+    pageCount,
+    total: items.length,
+    setPage: (next) => setState({ page: next, resetKey }),
+  };
+}
+
+function Pagination({ pagination }) {
+  const ref = useRef(null);
+  const { offset, page, pageCount, total, items, setPage } = pagination;
+  if (pageCount <= 1) return null;
+  function goTo(next) {
+    setPage(next);
+    ref.current?.previousElementSibling?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  return (
+    <nav className="pagination" ref={ref} aria-label="Halaman">
+      <span>
+        {offset + 1}–{offset + items.length} dari {total}
+      </span>
+      <div>
+        <button
+          type="button"
+          className="secondary"
+          disabled={page === 1}
+          onClick={() => goTo(page - 1)}
+          aria-label="Halaman sebelumnya"
+        >
+          <CaretLeft size={16} />
+        </button>
+        <b>
+          {page} / {pageCount}
+        </b>
+        <button
+          type="button"
+          className="secondary"
+          disabled={page === pageCount}
+          onClick={() => goTo(page + 1)}
+          aria-label="Halaman berikutnya"
+        >
+          <CaretRight size={16} />
+        </button>
+      </div>
+    </nav>
   );
 }
 
@@ -2382,6 +2442,9 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
       .toLowerCase()
       .includes(searchQuery.toLowerCase()),
   );
+  const filterKey = `${selectedClass}|${searchQuery}`;
+  const absentPage = usePagination(filteredAbsentStudents, filterKey);
+  const attendancePage = usePagination(filteredAttendances, filterKey);
   return (
     <>
       <button className={`holiday-toggle${isHoliday ? " holiday-active" : ""}`} onClick={onToggleHoliday}>
@@ -2468,10 +2531,10 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
             <span>{absentStudents.length} murid</span>
           </div>
           <div className="unconfirmed-list">
-            {filteredAbsentStudents.map((student, index) => (
+            {absentPage.items.map((student, index) => (
               <div key={student.id}>
                 <span className="person-initial attendance-number">
-                  {index + 1}
+                  {absentPage.offset + index + 1}
                 </span>
                 <div>
                   <strong>{student.name}</strong>
@@ -2498,6 +2561,7 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
               </div>
             ))}
           </div>
+          <Pagination pagination={absentPage} />
           {!filteredAbsentStudents.length && (
             <div className="empty">Murid tidak ditemukan.</div>
           )}
@@ -2514,10 +2578,11 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
           </span>
         </div>
         {filteredAttendances.length ? (
+          <>
           <div className="attendance-list">
-            {filteredAttendances.map((item, index) => (
+            {attendancePage.items.map((item, index) => (
               <div key={item.id}>
-                <span className="person-initial attendance-number">{index + 1}</span>
+                <span className="person-initial attendance-number">{attendancePage.offset + index + 1}</span>
                 <div className="attendance-person">
                   <strong>{item.studentName}</strong>
                   <span className="attendance-class">
@@ -2540,6 +2605,8 @@ function Dashboard({ students, classOptions, attendances, totalStudents, totalCo
               </div>
             ))}
           </div>
+          <Pagination pagination={attendancePage} />
+          </>
         ) : (
           <div className="empty">
             <CheckCircle size={28} />
@@ -2637,6 +2704,10 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
     `${item.studentName} ${item.className} ${item.status}`
       .toLowerCase()
       .includes(searchQuery.toLowerCase()),
+  );
+  const recordPage = usePagination(
+    searchedRecords,
+    `${selectedMonth}|${selectedClass}|${reportFilter}|${searchQuery}`,
   );
   const rankedClasses = (classRanking || []).filter((item) =>
     item.className.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -2901,9 +2972,9 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
       )}
       <div className="report-list">
         {searchedRecords.length ? (
-          searchedRecords.map((item, index) => (
+          recordPage.items.map((item, index) => (
             <div key={item.id}>
-              <span className="person-initial attendance-number">{index + 1}</span>
+              <span className="person-initial attendance-number">{recordPage.offset + index + 1}</span>
                 <div>
                   <strong>{item.studentName}</strong>
                    <span>
@@ -2929,6 +3000,7 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
           </div>
         )}
       </div>
+      <Pagination pagination={recordPage} />
     </section>
   );
 }
@@ -2960,6 +3032,9 @@ function AttendanceCheckPage({ students, history, holidays, todayKey, selectedDa
   );
   const isHoliday = holidays.includes(selectedDate);
   const isFutureDate = selectedDate > todayKey;
+  const filterKey = `${selectedDate}|${selectedClass}|${searchQuery}`;
+  const unconfirmedPage = usePagination(unconfirmedStudents, filterKey);
+  const confirmedPage = usePagination(selectedAttendances, filterKey);
   if (loading) {
     return (
       <section className="attendance-check-page empty">
@@ -3005,10 +3080,11 @@ function AttendanceCheckPage({ students, history, holidays, todayKey, selectedDa
           <span>{unconfirmedStudents.length} murid</span>
         </div>
         {unconfirmedStudents.length ? (
+          <>
           <div className="unconfirmed-list">
-            {unconfirmedStudents.map((student, index) => (
+            {unconfirmedPage.items.map((student, index) => (
               <div key={student.id}>
-                <span className="person-initial attendance-number">{index + 1}</span>
+                <span className="person-initial attendance-number">{unconfirmedPage.offset + index + 1}</span>
                 <div>
                   <strong>{student.name}</strong>
                   <span>Kelas {student.className}</span>
@@ -3034,6 +3110,8 @@ function AttendanceCheckPage({ students, history, holidays, todayKey, selectedDa
               </div>
             ))}
           </div>
+          <Pagination pagination={unconfirmedPage} />
+          </>
         ) : <div className="empty">Semua murid sudah absen atau tidak ditemukan.</div>}
       </section>
       <section className="attendance-panel">
@@ -3045,10 +3123,11 @@ function AttendanceCheckPage({ students, history, holidays, todayKey, selectedDa
           <span>{selectedAttendances.length} konfirmasi</span>
         </div>
         {selectedAttendances.length ? (
+          <>
           <div className="attendance-list">
-            {selectedAttendances.map((item, index) => (
+            {confirmedPage.items.map((item, index) => (
               <div key={item.id}>
-                <span className="person-initial attendance-number">{index + 1}</span>
+                <span className="person-initial attendance-number">{confirmedPage.offset + index + 1}</span>
                 <div className="attendance-person">
                   <strong>{item.studentName}</strong>
                   <span className="attendance-class">Kelas {item.className}</span>
@@ -3069,6 +3148,8 @@ function AttendanceCheckPage({ students, history, holidays, todayKey, selectedDa
               </div>
             ))}
           </div>
+          <Pagination pagination={confirmedPage} />
+          </>
         ) : <div className="empty">Belum ada murid yang absen pada tanggal ini.</div>}
       </section>
     </section>
@@ -3113,6 +3194,7 @@ function Students({
 }) {
   const [preview, setPreview] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);
+  const studentPage = usePagination(students, `${query}|${classFilter}`);
   function handleFile(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -3255,10 +3337,10 @@ function Students({
           <span>Password</span>
           <span>Aksi</span>
         </div>
-        {students.map((student, index) => (
+        {studentPage.items.map((student, index) => (
           <div className="table-row" key={student.id}>
             <strong>
-              <span className="student-number">{index + 1}</span>
+              <span className="student-number">{studentPage.offset + index + 1}</span>
               {student.name}
             </strong>
             <span>
@@ -3299,6 +3381,7 @@ function Students({
           </div>
         ))}
       </div>
+      <Pagination pagination={studentPage} />
       {preview && (
         <ImportPreview
           preview={preview}
