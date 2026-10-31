@@ -3274,7 +3274,7 @@ function Students({
             <span>
               <button
                 type="button"
-                className="secondary compact"
+                className="secondary reset-password-button"
                 onClick={() => setResetTarget(student)}
               >
                 Reset password
