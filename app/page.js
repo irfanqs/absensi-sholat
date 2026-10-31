@@ -4,12 +4,39 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabase";
 import {
+  ADMIN_ACTIVITY_KEY,
+  E_LOGIN_RETRY,
+  LEGACY_STORAGE_KEYS,
+  isAdminSessionExpired,
+  migrateLegacySession,
+  signInWithUsername,
+} from "../lib/auth";
+import {
+  adminDeleteAttendance,
+  adminMarkAttendance,
+  adminSetHoliday,
+  adminSetPrayerSchedule,
+  changeOwnPassword,
+  createStudent,
+  deactivateStudent,
+  fetchOwnStudentProfile,
+  importStudents,
+  resetStudentPassword,
+  submitAttendance,
+  submitLateAttendance,
+  updateStudent,
+} from "../lib/api";
+import { normalizeStudentName } from "../lib/admin-students";
+import { selectReportStudents } from "../lib/report-students";
+import {
   ArrowLeft,
   BookOpen,
   CalendarBlank,
   CheckCircle,
   ClipboardText,
   DownloadSimple,
+  Eye,
+  EyeSlash,
   Gear,
   House,
   List,
@@ -31,65 +58,25 @@ const QRCodeCanvas = dynamic(
   { ssr: false },
 );
 
-const initialStudents = [
-  ["Irfan Maulana", "9A", "9A_Irfan"],
-  ["Ahmad Fauzi", "9A", "9A_Ahmad"],
-  ["Bima Pratama", "9A", "9A_Bima"],
-  ["Dimas Saputra", "9A", "9A_Dimas"],
-  ["Fajar Ramadhan", "9A", "9A_Fajar"],
-  ["Rizky Kurniawan", "9A", "9A_Rizky"],
-  ["Ardiansyah Putra", "9A", "9A_Ardi"],
-  ["Ilham Nugraha", "9A", "9A_Ilham"],
-  ["Rafi Akbar", "9A", "9A_Rafi"],
-  ["Yusuf Hidayat", "9A", "9A_Yusuf"],
-  ["Andi Prasetyo", "9B", "9B_Andi"],
-  ["Bagus Setiawan", "9B", "9B_Bagus"],
-  ["Cahyo Prabowo", "9B", "9B_Cahyo"],
-  ["Deni Kurnia", "9B", "9B_Deni"],
-  ["Eko Saputro", "9B", "9B_Eko"],
-  ["Galih Prakoso", "9B", "9B_Galih"],
-  ["Hendra Wijaya", "9B", "9B_Hendra"],
-  ["Joko Santoso", "9B", "9B_Joko"],
-  ["Lukman Hakim", "9B", "9B_Lukman"],
-  ["Nanda Pratama", "9B", "9B_Nanda"],
-  ["Alya Nurfadilah", "9C", "9C_Alya"],
-  ["Aisyah Rahmawati", "9C", "9C_Aisyah"],
-  ["Citra Lestari", "9C", "9C_Citra"],
-  ["Dinda Ayu Permata", "9C", "9C_Dinda"],
-  ["Fitri Handayani", "9C", "9C_Fitri"],
-  ["Ghina Azzahra", "9C", "9C_Ghina"],
-  ["Hana Safitri", "9C", "9C_Hana"],
-  ["Intan Sari", "9C", "9C_Intan"],
-  ["Karina Putri", "9C", "9C_Karina"],
-  ["Nabila Zahra", "9C", "9C_Nabila"],
-  ["Aditya Pratama", "9D", "9D_Aditya"],
-  ["Bayu Firmansyah", "9D", "9D_Bayu"],
-  ["Daffa Alfarizi", "9D", "9D_Daffa"],
-  ["Fikri Ramadhan", "9D", "9D_Fikri"],
-  ["Hafiz Maulana", "9D", "9D_Hafiz"],
-  ["Kevin Pratama", "9D", "9D_Kevin"],
-  ["Muhammad Farhan", "9D", "9D_Muhammad"],
-  ["Rangga Saputra", "9D", "9D_Rangga"],
-  ["Satria Wibowo", "9D", "9D_Satria"],
-  ["Zidan Alamsyah", "9D", "9D_Zidan"],
-].map(([name, className, username], index) => ({
-  id: index + 1,
-  name,
-  className,
-  username,
-  password: "123",
-}));
-
-const REMOTE_CACHE_KEY = "dzuhur-supabase-cache-v2";
+// Admin-only cache of students and holidays (never passwords).
+const REMOTE_CACHE_KEY = "dzuhur-cache-v3";
+const LEGACY_REMOTE_CACHE_KEY = "dzuhur-supabase-cache-v2";
 const REMOTE_CACHE_TTL_MS = 29 * 24 * 60 * 60 * 1000;
+// Students have no realtime; on tab focus they refetch, at most this often.
+const FOCUS_REFRESH_MIN_MS = 5 * 1000;
 const ATTENDANCE_COLUMNS =
   "id,student_id,student_name,class_name,date,time,status";
-
-function createId() {
-  return typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : Date.now().toString() + "-" + Math.random().toString(16).slice(2);
-}
+const STUDENT_COLUMNS = "id,nis,name,class_name,gender,username,is_active";
+const ADMIN_USER = { role: "admin", name: "Guru Admin", username: "guru" };
+const E_NO_STUDENT = "Akun siswa tidak ditemukan atau nonaktif.";
+const E_SESSION_ENDED = "Sesi berakhir. Silakan masuk kembali.";
+const E_ADMIN_IDLE =
+  "Sesi guru berakhir karena tidak aktif lebih dari 7 hari. Silakan masuk kembali.";
+const ADMIN_ACTIVITY_WRITE_MS = 60 * 1000;
+// Initial password for students added by hand or imported; sent only to the admin API.
+const DEFAULT_STUDENT_PASSWORD = "123";
+// Matches the admin import route's per-request limit.
+const IMPORT_BATCH_SIZE = 100;
 
 function normalizeImportHeader(value) {
   return String(value || "")
@@ -97,15 +84,7 @@ function normalizeImportHeader(value) {
     .replace(/[\s./_-]/g, "");
 }
 
-function normalizeStudentName(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/^(')?([a-z])/, (_, apostrophe = "", letter) => `${apostrophe}${letter.toUpperCase()}`)
-    .replace(/(^|[\s-])([a-z])/g, (_, separator, letter) => `${separator}${letter.toUpperCase()}`)
-    .trim();
-}
-
-async function fetchAllSupabaseRows(table, columns = "*") {
+async function fetchAllSupabaseRows(table, columns) {
   const pageSize = 1000;
   const rows = [];
   let page = 0;
@@ -189,7 +168,7 @@ function mapStudent(item) {
     className: item.class_name,
     gender: item.gender || "",
     username: item.username,
-    password: item.password,
+    isActive: item.is_active !== false,
   };
 }
 
@@ -296,20 +275,35 @@ async function fetchServerTime() {
   return error || !data ? null : new Date(data);
 }
 
+// Only the fields mapStudent produces, so a typed password never reaches the cache.
+function toCachedStudent(student) {
+  return {
+    id: student.id,
+    nis: student.nis,
+    name: student.name,
+    className: student.className,
+    gender: student.gender,
+    username: student.username,
+    isActive: student.isActive,
+  };
+}
+
+function mapPrayerSchedule(row) {
+  return {
+    enabled: row.enabled,
+    start: row.start_time.slice(0, 5),
+    end: row.end_time.slice(0, 5),
+    attendanceStartDate: row.attendance_start_date,
+  };
+}
+
 async function fetchPrayerSchedule() {
   const { data, error } = await supabase
     .from("prayer_schedule")
-    .select("enabled,start_time,end_time")
+    .select("enabled,start_time,end_time,attendance_start_date")
     .eq("id", 1)
     .single();
-  return {
-    schedule: data && {
-      enabled: data.enabled,
-      start: data.start_time.slice(0, 5),
-      end: data.end_time.slice(0, 5),
-    },
-    error,
-  };
+  return { schedule: data && mapPrayerSchedule(data), error };
 }
 
 function parseImportedRows(rows, existingStudents = []) {
@@ -406,15 +400,7 @@ function parseImportedRows(rows, existingStudents = []) {
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, ".")
           .replace(/^\.|\.$/g, "");
-      return {
-        id: createId(),
-        nis,
-        name,
-        gender,
-        className,
-        username,
-        password: "123",
-      };
+      return { nis, name, gender, className, username };
     })
     .filter(Boolean);
   return { students, excludedNonIslam, duplicates };
@@ -446,6 +432,7 @@ const defaultPrayerSchedule = {
   enabled: true,
   start: "11:30",
   end: "15:00",
+  attendanceStartDate: "2026-08-01",
 };
 
 function timeToMinutes(value) {
@@ -476,7 +463,37 @@ function DatabaseLoading({ label }) {
 }
 
 export default function Home() {
-  const [students, setStudents] = useState(supabase ? [] : initialStudents);
+  if (!supabase) return <MissingConfiguration />;
+  return <AbsensiApp />;
+}
+
+function MissingConfiguration() {
+  return (
+    <main className="session-loading">
+      <div>
+        <Logo />
+        <p className="form-error" role="alert">
+          <WarningCircle size={18} />
+          Aplikasi belum terhubung ke database. Hubungi admin sekolah untuk
+          mengatur konfigurasi Supabase.
+        </p>
+      </div>
+    </main>
+  );
+}
+
+function clearAccountStorage() {
+  localStorage.removeItem(REMOTE_CACHE_KEY);
+  localStorage.removeItem(LEGACY_REMOTE_CACHE_KEY);
+  localStorage.removeItem(ADMIN_ACTIVITY_KEY);
+}
+
+function readAdminLastActive() {
+  return Number(localStorage.getItem(ADMIN_ACTIVITY_KEY)) || null;
+}
+
+function AbsensiApp() {
+  const [students, setStudents] = useState([]);
   const [attendances, setAttendances] = useState([]);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceSyncScope, setAttendanceSyncScope] = useState(null);
@@ -489,8 +506,10 @@ export default function Home() {
   const [attendanceCheckSyncScope, setAttendanceCheckSyncScope] = useState(null);
   const [serverNow, setServerNow] = useState(new Date());
   const [holidays, setHolidays] = useState([]);
+  const [accountDataLoading, setAccountDataLoading] = useState(false);
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
   const [view, setView] = useState("dashboard");
   const [query, setQuery] = useState("");
   const [classFilter, setClassFilter] = useState("Semua kelas");
@@ -500,92 +519,241 @@ export default function Home() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [attendanceDeleteTarget, setAttendanceDeleteTarget] = useState(null);
   const [menstruationDecision, setMenstruationDecision] = useState(null);
-  const [teacherPassword, setTeacherPassword] = useState("123");
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [prayerSchedule, setPrayerSchedule] = useState(defaultPrayerSchedule);
-  const [scheduleReady, setScheduleReady] = useState(!supabase);
+  const [scheduleReady, setScheduleReady] = useState(false);
   const remoteSnapshotAt = useRef(0);
   const cacheCursors = useRef({ students: 0, holidays: 0 });
   const reportRequest = useRef(0);
   const attendanceCheckRequest = useRef(0);
+  // Auth user id whose profile is currently shown; null while signed out.
+  const authUserId = useRef(null);
+  // Bumped on every session change so a slower, older resolution is discarded.
+  const authRun = useRef(0);
+  const loginInFlight = useRef(false);
+  // A student's own attendance submit in progress (blocks double clicks).
+  const attendanceInFlight = useRef(false);
+  // Bumped on each attendance write so an older focus refetch does not undo it.
+  const attendanceWriteSeq = useRef(0);
+  // Blocks a second submit of the student form while the first is in flight.
+  const studentSaveInFlight = useRef(false);
 
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
   }).format(serverNow);
   const [attendanceCheckDate, setAttendanceCheckDate] = useState(todayKey);
 
+  function resetAccountState() {
+    remoteSnapshotAt.current = 0;
+    cacheCursors.current = { students: 0, holidays: 0 };
+    setStudents([]);
+    setAttendances([]);
+    setAttendanceSyncScope(null);
+    setReportHistory([]);
+    setReportClassRanking([]);
+    setReportSyncScope(null);
+    setAttendanceCheckRecords([]);
+    setAttendanceCheckSyncScope(null);
+    setHolidays([]);
+    setView("dashboard");
+    setEditing(null);
+    setDeleteTarget(null);
+    setAttendanceDeleteTarget(null);
+    setPasswordModalOpen(false);
+    setAttendanceNotice("");
+  }
+
+  // Ends the local session. `callSignOut` is false when Supabase already
+  // dropped the session (SIGNED_OUT event), so there is nothing to revoke.
+  async function endSession(message, { callSignOut = true } = {}) {
+    authRun.current += 1;
+    authUserId.current = null;
+    clearAccountStorage();
+    resetAccountState();
+    setUser(null);
+    setNotice(message);
+    if (callSignOut) await supabase.auth.signOut({ scope: "local" });
+  }
+
+  function showUser(session, nextUser) {
+    // Another account signed in (e.g. from a second tab): drop the old data.
+    if (authUserId.current && authUserId.current !== session.user.id) {
+      resetAccountState();
+    }
+    authUserId.current = session.user.id;
+    setNotice("");
+    setUser(nextUser);
+  }
+
+  // Turns a Supabase session into the app's `user`. `source` is "login" for a
+  // sign-in from this tab's form, otherwise the session is being restored.
+  async function applySession(session, source) {
+    const run = ++authRun.current;
+    if (!session) {
+      authUserId.current = null;
+      setUser(null);
+      return;
+    }
+    const role = session.user.app_metadata?.role;
+    if (role === "admin") {
+      const lastActive = readAdminLastActive();
+      if (source !== "login" && isAdminSessionExpired(lastActive, Date.now())) {
+        await endSession(E_ADMIN_IDLE);
+        return;
+      }
+      if (source === "login" || lastActive === null) {
+        localStorage.setItem(ADMIN_ACTIVITY_KEY, String(Date.now()));
+      }
+      showUser(session, ADMIN_USER);
+      return;
+    }
+    if (role !== "student") {
+      await endSession(E_NO_STUDENT);
+      return;
+    }
+    const { data, error } = await fetchOwnStudentProfile(session.user.id);
+    if (run !== authRun.current) return;
+    if (error) {
+      // Keep the Supabase session: a network error is not a reason to sign out.
+      authUserId.current = null;
+      setUser(null);
+      setNotice(`Gagal memuat profil murid: ${error.message}`);
+      return;
+    }
+    if (!data || data.is_active === false) {
+      await endSession(E_NO_STUDENT);
+      return;
+    }
+    showUser(session, { ...mapStudent(data), role: "student" });
+  }
+
   useEffect(() => {
     let active = true;
-    async function loadData() {
-      const storedSession = localStorage.getItem("dzuhur-session");
-      if (storedSession) setUser(JSON.parse(storedSession));
-      if (supabase) {
-        const cache = readRemoteCache();
-        if (cache) {
-          remoteSnapshotAt.current = cache.snapshotAt;
-          cacheCursors.current = cache.cursors;
-          setStudents(cache.students);
-          setHolidays(cache.holidays);
+    let subscription = null;
+    async function restoreSession() {
+      try {
+        const initial = await supabase.auth.getSession();
+        if (initial.data.session) {
+          for (const key of LEGACY_STORAGE_KEYS) localStorage.removeItem(key);
+        } else {
+          const migration = await migrateLegacySession(
+            localStorage,
+            (username, password) =>
+              signInWithUsername(supabase, username, password).then((result) => {
+                if (!result.error) return true;
+                return result.error === E_LOGIN_RETRY ? "retry" : false;
+              }),
+          );
+          if (migration === "retry" && active) setNotice(E_LOGIN_RETRY);
         }
-        const initialServerTime = await fetchServerTime();
-        if (initialServerTime) setServerNow(initialServerTime);
-        const cacheIsFresh =
-          cache && Date.now() - cache.snapshotAt < REMOTE_CACHE_TTL_MS;
-        if (!cacheIsFresh) {
-          const cursor = await fetchLatestSyncCursor();
-          const [studentsResult, holidaysResult] = await Promise.all([
-            fetchAllSupabaseRows(
-              "students",
-              "id,nis,name,class_name,gender,username,password",
-            ),
-            fetchAllSupabaseRows("holidays", "date"),
-          ]);
-          const hasError = studentsResult.error || holidaysResult.error;
-          if (hasError) {
-            if (!cache) {
-              setNotice(
-                "Database belum siap. Jalankan schema Supabase terlebih dahulu.",
-              );
+        const { data } = await supabase.auth.getSession();
+        if (!active) return;
+        await applySession(data.session, "restore");
+      } catch {
+        if (active) setNotice(E_SESSION_ENDED);
+      }
+      if (!active) return;
+      setReady(true);
+      subscription = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === "INITIAL_SESSION") return;
+        // Supabase calls listeners while holding its auth lock; querying from
+        // inside the callback would deadlock, so handle the event afterwards.
+        setTimeout(() => {
+          if (!active) return;
+          if (event === "SIGNED_OUT") {
+            if (authUserId.current) {
+              endSession(E_SESSION_ENDED, { callSignOut: false });
+            } else {
+              authRun.current += 1;
             }
-          } else {
-            setStudents((studentsResult.data || []).map(mapStudent));
-            setHolidays((holidaysResult.data || []).map((item) => item.date));
-            remoteSnapshotAt.current = Date.now();
-            cacheCursors.current = { students: cursor, holidays: cursor };
+            return;
           }
-        }
-      } else {
-        const storedStudents = localStorage.getItem("dzuhur-students");
-        const storedAttendances = localStorage.getItem("dzuhur-attendances");
-        const storedHolidays = localStorage.getItem("dzuhur-holidays");
-        if (storedStudents) setStudents(JSON.parse(storedStudents));
-        if (storedAttendances) setAttendances(JSON.parse(storedAttendances));
-        if (storedHolidays) setHolidays(JSON.parse(storedHolidays));
-      }
-      const storedTeacherPassword = localStorage.getItem("dzuhur-teacher-password");
-      if (storedTeacherPassword) setTeacherPassword(storedTeacherPassword);
-      const storedPrayerSchedule = !supabase && localStorage.getItem("dzuhur-prayer-schedule");
-      if (storedPrayerSchedule) {
-        try {
-          const parsedSchedule = JSON.parse(storedPrayerSchedule);
-          if (parsedSchedule.start && parsedSchedule.end) {
-            setPrayerSchedule({ ...defaultPrayerSchedule, ...parsedSchedule });
-          }
-        } catch {
-          // Use the default schedule when stored settings are invalid.
-        }
-      }
-      if (active) setReady(true);
+          if (loginInFlight.current || !session) return;
+          if (session.user.id !== authUserId.current) applySession(session, "restore");
+        }, 0);
+      }).data.subscription;
     }
-    loadData();
+    restoreSession();
     return () => {
       active = false;
+      subscription?.unsubscribe();
     };
   }, []);
   useEffect(() => {
-    if (!supabase) return;
+    if (user?.role !== "admin") return;
+    function recordActivity() {
+      const now = Date.now();
+      const lastActive = readAdminLastActive();
+      if (isAdminSessionExpired(lastActive, now)) {
+        endSession(E_ADMIN_IDLE);
+        return;
+      }
+      if (lastActive === null || now - lastActive >= ADMIN_ACTIVITY_WRITE_MS) {
+        localStorage.setItem(ADMIN_ACTIVITY_KEY, String(now));
+      }
+    }
+    window.addEventListener("pointerdown", recordActivity);
+    window.addEventListener("keydown", recordActivity);
+    return () => {
+      window.removeEventListener("pointerdown", recordActivity);
+      window.removeEventListener("keydown", recordActivity);
+    };
+  }, [user?.role]);
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const isAdmin = user.role === "admin";
+    async function loadAccountData() {
+      setAccountDataLoading(true);
+      const cache = isAdmin ? readRemoteCache() : null;
+      if (cache) {
+        remoteSnapshotAt.current = cache.snapshotAt;
+        cacheCursors.current = cache.cursors;
+        setStudents(cache.students);
+        setHolidays(cache.holidays);
+      }
+      const cacheIsFresh =
+        cache && Date.now() - cache.snapshotAt < REMOTE_CACHE_TTL_MS;
+      if (!cacheIsFresh) {
+        // sync_changes is admin-only; students have no sync cursor.
+        const cursor = isAdmin ? await fetchLatestSyncCursor() : 0;
+        const [studentsResult, holidaysResult] = await Promise.all([
+          isAdmin
+            ? fetchAllSupabaseRows("students", STUDENT_COLUMNS)
+            : { data: [], error: null },
+          fetchAllSupabaseRows("holidays", "date"),
+        ]);
+        if (!active) return;
+        const hasError = studentsResult.error || holidaysResult.error;
+        if (hasError) {
+          if (!cache) {
+            setNotice(
+              "Database belum siap. Jalankan schema Supabase terlebih dahulu.",
+            );
+          }
+        } else {
+          if (isAdmin) setStudents((studentsResult.data || []).map(mapStudent));
+          setHolidays((holidaysResult.data || []).map((item) => item.date));
+          remoteSnapshotAt.current = Date.now();
+          cacheCursors.current = { students: cursor, holidays: cursor };
+        }
+      }
+      if (active) setAccountDataLoading(false);
+    }
+    loadAccountData();
+    return () => {
+      active = false;
+      setAccountDataLoading(false);
+    };
+  }, [user?.role, user?.id]);
+  useEffect(() => {
+    if (!user) return;
+    const isAdmin = user.role === "admin";
+    const studentId = isAdmin ? null : String(user.id);
     let active = true;
     let requestId = 0;
+    let focusRefreshing = false;
+    let lastFocusRefresh = Date.now();
     async function loadSchedule() {
       const id = ++requestId;
       const result = await fetchPrayerSchedule();
@@ -599,36 +767,63 @@ export default function Home() {
         setNotice((current) => current.startsWith("Gagal memuat jadwal konfirmasi:") ? "" : current);
       }
     }
-    const channel = supabase
-      .channel("prayer-schedule-sync")
-      .on("postgres_changes", {
-        event: "UPDATE",
-        schema: "public",
-        table: "prayer_schedule",
-        filter: "id=eq.1",
-      }, loadSchedule)
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") loadSchedule();
-      });
-    const onFocus = () => loadSchedule();
+    // Students have no realtime: refetch their own attendance and holidays.
+    async function loadStudentData() {
+      const writeSeq = attendanceWriteSeq.current;
+      const [attendanceResult, holidaysResult] = await Promise.all([
+        fetchAttendanceRows({ studentId }),
+        fetchAllSupabaseRows("holidays", "date"),
+      ]);
+      if (!active) return;
+      // Errors keep the data already shown; the next focus tries again.
+      if (!attendanceResult.error && writeSeq === attendanceWriteSeq.current) {
+        setAttendances(attendanceResult.data || []);
+      }
+      if (!holidaysResult.error) {
+        setHolidays((holidaysResult.data || []).map((item) => item.date));
+      }
+    }
+    async function onFocus() {
+      if (focusRefreshing || Date.now() - lastFocusRefresh < FOCUS_REFRESH_MIN_MS) return;
+      focusRefreshing = true;
+      lastFocusRefresh = Date.now();
+      try {
+        await Promise.all(isAdmin ? [loadSchedule()] : [loadSchedule(), loadStudentData()]);
+      } finally {
+        focusRefreshing = false;
+      }
+    }
+    const channel = isAdmin
+      ? supabase
+          .channel("prayer-schedule-sync")
+          .on("postgres_changes", {
+            event: "UPDATE",
+            schema: "public",
+            table: "prayer_schedule",
+            filter: "id=eq.1",
+          }, loadSchedule)
+          .subscribe((status) => {
+            if (status === "SUBSCRIBED") loadSchedule();
+          })
+      : null;
     window.addEventListener("focus", onFocus);
     loadSchedule();
     return () => {
       active = false;
       window.removeEventListener("focus", onFocus);
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user?.role, user?.id]);
   useEffect(() => {
     const ticker = setInterval(() => {
       setServerNow((current) => new Date(current.getTime() + 1000));
     }, 1000);
-    if (!supabase) return () => clearInterval(ticker);
     let active = true;
     const sync = async () => {
       const current = await fetchServerTime();
       if (active && current) setServerNow(current);
     };
+    sync();
     const syncTimer = setInterval(sync, 30000);
     return () => {
       active = false;
@@ -637,28 +832,17 @@ export default function Home() {
     };
   }, []);
   useEffect(() => {
-    if (!ready) return;
-    if (!supabase) localStorage.setItem("dzuhur-students", JSON.stringify(students));
-  }, [students, ready]);
-  useEffect(() => {
-    if (!ready) return;
-    if (!supabase)
-      localStorage.setItem("dzuhur-attendances", JSON.stringify(attendances));
-  }, [attendances, ready]);
-  useEffect(() => {
-    if (!ready) return;
-    if (!supabase) localStorage.setItem("dzuhur-holidays", JSON.stringify(holidays));
-  }, [holidays, ready]);
-  useEffect(() => {
-    if (!supabase || !ready) return;
+    if (user?.role !== "admin") return;
     const timer = setTimeout(() => {
+      // Logout may have cleared storage before this effect was cleaned up.
+      if (!authUserId.current) return;
       try {
         localStorage.setItem(
           REMOTE_CACHE_KEY,
           JSON.stringify({
             snapshotAt: remoteSnapshotAt.current,
             cursors: cacheCursors.current,
-            students,
+            students: students.map(toCachedStudent),
             holidays,
           }),
         );
@@ -667,13 +851,14 @@ export default function Home() {
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [students, holidays, ready]);
+  }, [students, holidays, user?.role]);
   useEffect(() => {
-    if (!supabase || !ready || !user) return;
+    if (!user) return;
     let active = true;
     async function loadAttendanceScope() {
       setAttendanceLoading(true);
-      const cursor = await fetchLatestSyncCursor();
+      // sync_changes is admin-only; students have no sync cursor.
+      const cursor = user.role === "admin" ? await fetchLatestSyncCursor() : 0;
       const result =
         user.role === "student"
           ? await fetchAttendanceRows({ studentId: user.id })
@@ -702,10 +887,11 @@ export default function Home() {
     };
   }, [ready, user?.role, user?.id, todayKey]);
   useEffect(() => {
-    if (!supabase || !ready) return;
+    // Realtime is admin-only: students cannot read sync_changes and refetch
+    // their own data on focus instead (see the schedule effect above).
+    if (user?.role !== "admin") return;
     const sources = [];
     const needsStudents =
-      !user ||
       ["dashboard", "reports", "attendance-check", "students"].includes(view);
     if (needsStudents) {
       sources.push({
@@ -714,22 +900,7 @@ export default function Home() {
         realtimeFilter: "table_name=eq.students",
       });
     }
-    if (user?.role === "student" && attendanceSyncScope?.studentId) {
-      sources.push({
-        cursor: Math.min(
-          attendanceSyncScope.cursor,
-          cacheCursors.current.students,
-        ),
-        studentId: attendanceSyncScope.studentId,
-        realtimeFilter: `student_id=eq.${attendanceSyncScope.studentId}`,
-      });
-      sources.push({
-        cursor: cacheCursors.current.holidays,
-        tableName: "holidays",
-        realtimeFilter: "table_name=eq.holidays",
-      });
-    } else if (
-      user?.role === "admin" &&
+    if (
       view === "dashboard" &&
       attendanceSyncScope?.startDate === todayKey
     ) {
@@ -738,25 +909,18 @@ export default function Home() {
         recordDate: todayKey,
         realtimeFilter: `record_date=eq.${todayKey}`,
       });
-    } else if (user?.role === "admin" && view === "reports" && reportSyncScope) {
+    } else if (view === "reports" && reportSyncScope) {
       sources.push({
         ...reportSyncScope,
         realtimeFilter: `record_date=gte.${reportSyncScope.startDate},record_date=lte.${reportSyncScope.endDate}`,
       });
-    } else if (
-      user?.role === "admin" &&
-      view === "attendance-check" &&
-      attendanceCheckSyncScope
-    ) {
+    } else if (view === "attendance-check" && attendanceCheckSyncScope) {
       sources.push({
         ...attendanceCheckSyncScope,
         realtimeFilter: `record_date=eq.${attendanceCheckSyncScope.recordDate}`,
       });
     }
-    if (
-      user?.role === "admin" &&
-      ["dashboard", "attendance-check"].includes(view)
-    ) {
+    if (["dashboard", "attendance-check"].includes(view)) {
       sources.push({
         cursor: cacheCursors.current.holidays,
         tableName: "holidays",
@@ -773,12 +937,10 @@ export default function Home() {
       const row = change.row_data;
       const deleting = change.operation === "DELETE";
       if (change.table_name === "students") {
-        if (user?.role !== "student") {
-          cacheCursors.current.students = Math.max(
-            cacheCursors.current.students,
-            Number(change.id),
-          );
-        }
+        cacheCursors.current.students = Math.max(
+          cacheCursors.current.students,
+          Number(change.id),
+        );
         if (deleting) {
           setStudents((current) =>
             current.filter((item) => String(item.id) !== String(change.record_id)),
@@ -788,14 +950,6 @@ export default function Home() {
           setStudents((current) =>
             upsertById(current, student, change.operation === "INSERT"),
           );
-          setUser((current) => {
-            if (current?.role !== "student" || String(current.id) !== String(student.id)) {
-              return current;
-            }
-            const next = { ...student, role: "student" };
-            localStorage.setItem("dzuhur-session", JSON.stringify(next));
-            return next;
-          });
         }
         return;
       }
@@ -817,12 +971,7 @@ export default function Home() {
         deleting
           ? current.filter((item) => String(item.id) !== String(change.record_id))
           : upsertById(current, record, change.operation === "INSERT");
-      if (
-        (user?.role === "student" && String(record.studentId) === String(user.id)) ||
-        (user?.role === "admin" && record.date === todayKey)
-      ) {
-        setAttendances(updateSlice);
-      }
+      if (record.date === todayKey) setAttendances(updateSlice);
       if (
         reportSyncScope &&
         record.date >= reportSyncScope.startDate &&
@@ -889,9 +1038,14 @@ export default function Home() {
   }, [user]);
 
   const todayAttendance = attendances.filter((item) => item.date === todayKey);
+  // Deactivated students stay in state (cache, realtime) but are hidden everywhere.
+  const activeStudents = useMemo(
+    () => students.filter((student) => student.isActive !== false),
+    [students],
+  );
   const filteredStudents = useMemo(
     () =>
-      students
+      activeStudents
         .filter(
           (student) =>
             (classFilter === "Semua kelas" ||
@@ -903,21 +1057,10 @@ export default function Home() {
         .sort((first, second) =>
           first.name.localeCompare(second.name, "id", { sensitivity: "base" }),
         ),
-    [students, classFilter, query],
+    [activeStudents, classFilter, query],
   );
 
   async function loadReportRange(startDate, endDate, className = "Semua kelas") {
-    if (!supabase) {
-      const records = attendances.filter(
-        (item) =>
-          item.date >= startDate &&
-          item.date <= endDate &&
-          (className === "Semua kelas" || item.className === className),
-      );
-      setReportHistory(records);
-      setReportClassRanking(buildMonthlyClassPrayerRanking(students, records, startDate, endDate, className));
-      return;
-    }
     const requestId = ++reportRequest.current;
     setReportLoading(true);
     const cursor = await fetchLatestSyncCursor();
@@ -934,7 +1077,7 @@ export default function Home() {
       setReportHistory(records);
       setReportClassRanking(
         rankingResult.error
-          ? buildMonthlyClassPrayerRanking(students, records, startDate, endDate, className)
+          ? buildMonthlyClassPrayerRanking(activeStudents, records, startDate, endDate, className)
           : rankingResult.data || [],
       );
       setNotice((current) => (rpcMissing && current.startsWith("Fungsi ranking") ? "" : current));
@@ -951,10 +1094,6 @@ export default function Home() {
 
   async function loadAttendanceCheckDate(date) {
     setAttendanceCheckDate(date);
-    if (!supabase) {
-      setAttendanceCheckRecords(attendances.filter((item) => item.date === date));
-      return;
-    }
     const requestId = ++attendanceCheckRequest.current;
     setAttendanceCheckLoading(true);
     const cursor = await fetchLatestSyncCursor();
@@ -1000,74 +1139,55 @@ export default function Home() {
     setAttendanceCheckRecords(remove);
   }
 
-  function login(event) {
+  async function login(event) {
     event.preventDefault();
+    if (loginInFlight.current) return;
     const form = new FormData(event.currentTarget);
-    const username = form.get("username").trim();
-    const password = form.get("password");
+    const username = String(form.get("username") || "");
+    const password = String(form.get("password") || "");
     setNotice("");
-    if (username === "guru" && password === teacherPassword) {
-      const session = { name: "Guru Admin", role: "admin" };
-      setUser(session);
-      localStorage.setItem("dzuhur-session", JSON.stringify(session));
-      setView("dashboard");
-      return;
+    loginInFlight.current = true;
+    setLoggingIn(true);
+    try {
+      const { error } = await signInWithUsername(supabase, username, password);
+      if (error) {
+        setNotice(error);
+        return;
+      }
+      // A legacy session kept for a retried migration is no longer needed.
+      for (const key of LEGACY_STORAGE_KEYS) localStorage.removeItem(key);
+      const { data } = await supabase.auth.getSession();
+      await applySession(data.session, "login");
+    } finally {
+      loginInFlight.current = false;
+      setLoggingIn(false);
     }
-    const student = students.find(
-      (item) => item.username === username && item.password === password,
-    );
-    if (student) {
-      const session = { ...student, role: "student" };
-      setUser(session);
-      localStorage.setItem("dzuhur-session", JSON.stringify(session));
-      return;
-    }
-    setNotice("Username atau password belum sesuai.");
+  }
+
+  function logout() {
+    return endSession("");
   }
 
   async function changePassword({ currentPassword, newPassword }) {
-    if (user.role === "admin") {
-      if (currentPassword !== teacherPassword) return "Password saat ini tidak sesuai.";
-      localStorage.setItem("dzuhur-teacher-password", newPassword);
-      setTeacherPassword(newPassword);
-      return "Password guru berhasil diubah.";
-    }
-    if (currentPassword !== user.password) return "Password saat ini tidak sesuai.";
-    if (supabase) {
-      const { error } = await supabase
-        .from("students")
-        .update({ password: newPassword })
-        .eq("id", String(user.id));
-      if (error) return `Gagal mengubah password: ${error.message}`;
-    }
-    const updatedUser = { ...user, password: newPassword };
-    setStudents((current) =>
-      current.map((student) => (student.id === user.id ? updatedUser : student)),
-    );
-    setUser(updatedUser);
-    localStorage.setItem("dzuhur-session", JSON.stringify(updatedUser));
-    return "Password murid berhasil diubah.";
+    const error = await changeOwnPassword(user.username, currentPassword, newPassword);
+    if (error) return error;
+    return user.role === "admin"
+      ? "Password guru berhasil diubah."
+      : "Password murid berhasil diubah.";
   }
 
   async function savePrayerSchedule(nextSchedule) {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from("prayer_schedule")
-        .update({
-          enabled: nextSchedule.enabled,
-          start_time: nextSchedule.start,
-          end_time: nextSchedule.end,
-        })
-        .eq("id", 1)
-        .select("id")
-        .single();
-      if (error || !data) return `Gagal menyimpan jadwal: ${error?.message || "Jadwal tidak ditemukan."}`;
-    } else {
-      localStorage.setItem("dzuhur-prayer-schedule", JSON.stringify(nextSchedule));
-    }
-    setPrayerSchedule(nextSchedule);
+    const { data, error } = await adminSetPrayerSchedule(nextSchedule);
+    if (error || !data) return `Gagal menyimpan jadwal: ${error || "Jadwal tidak ditemukan."}`;
+    setPrayerSchedule(mapPrayerSchedule(data));
     setScheduleReady(true);
     return null;
+  }
+
+  // Shows the row the server stored (its date and time), never a client-built one.
+  function applyAttendanceRow(row) {
+    attendanceWriteSeq.current += 1;
+    upsertAttendanceSlices(mapAttendance(row));
   }
 
   async function recordAttendance(status, date = todayKey) {
@@ -1085,36 +1205,23 @@ export default function Home() {
       )
     )
       return;
-    const record = {
-      id: createId(),
-      studentId: user.id,
-      studentName: user.name,
-      className: user.className,
-      date,
-      time: new Intl.DateTimeFormat("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Asia/Jakarta",
-       }).format(serverNow),
-      status,
-    };
-    if (supabase) {
-      const { error } = await supabase.from("attendances").insert({
-        id: String(record.id),
-        student_id: String(record.studentId),
-        student_name: record.studentName,
-        class_name: record.className,
-        date: record.date,
-        time: record.time,
-        status: record.status,
-      });
-      if (error) {
-        setAttendanceNotice(`Gagal menyimpan absensi: ${error.message}`);
+    if (attendanceInFlight.current) return;
+    attendanceInFlight.current = true;
+    try {
+      // Today's date is decided by the server; earlier dates are corrections.
+      const { data, error } =
+        date === todayKey
+          ? await submitAttendance(status)
+          : await submitLateAttendance(date, status);
+      if (error || !data) {
+        setAttendanceNotice(error || "Absensi tidak tersimpan. Coba lagi.");
         return;
       }
+      setAttendanceNotice("");
+      applyAttendanceRow(data);
+    } finally {
+      attendanceInFlight.current = false;
     }
-    setAttendanceNotice("");
-    upsertAttendanceSlices(record);
   }
 
   function confirmPrayer() {
@@ -1131,14 +1238,10 @@ export default function Home() {
 
   async function toggleHoliday() {
     const isHoliday = holidays.includes(todayKey);
-    if (supabase) {
-      const result = isHoliday
-        ? await supabase.from("holidays").delete().eq("date", todayKey)
-        : await supabase.from("holidays").insert({ date: todayKey });
-      if (result.error) {
-        setNotice(`Gagal mengubah status hari libur: ${result.error.message}`);
-        return;
-      }
+    const { error } = await adminSetHoliday(todayKey, !isHoliday);
+    if (error) {
+      setNotice(`Gagal mengubah status hari libur: ${error}`);
+      return;
     }
     setHolidays((current) =>
       isHoliday
@@ -1148,6 +1251,16 @@ export default function Home() {
           : [...current, todayKey],
     );
     setNotice("");
+  }
+
+  async function markAttendanceAsAdmin(student, date, status, failureLabel) {
+    const { data, error } = await adminMarkAttendance(student.id, date, status);
+    if (error || !data) {
+      setNotice(`${failureLabel}: ${error || "Absensi tidak tersimpan."}`);
+      return;
+    }
+    setNotice("");
+    applyAttendanceRow(data);
   }
 
   async function markStudentForDate(student, status, date) {
@@ -1165,36 +1278,7 @@ export default function Home() {
       )
     )
       return;
-    const record = {
-      id: createId(),
-      studentId: student.id,
-      studentName: student.name,
-      className: student.className,
-      date,
-      time: new Intl.DateTimeFormat("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Asia/Jakarta",
-      }).format(serverNow),
-      status,
-    };
-    if (supabase) {
-      const { error } = await supabase.from("attendances").insert({
-        id: String(record.id),
-        student_id: String(record.studentId),
-        student_name: record.studentName,
-        class_name: record.className,
-        date: record.date,
-        time: record.time,
-        status: record.status,
-      });
-      if (error) {
-        setNotice(`Gagal menandai absensi: ${error.message}`);
-        return;
-      }
-    }
-    setNotice("");
-    upsertAttendanceSlices(record);
+    await markAttendanceAsAdmin(student, date, status, "Gagal menandai absensi");
   }
 
   async function markStudentPresent(student) {
@@ -1203,35 +1287,7 @@ export default function Home() {
       return;
     }
     if (attendances.some((item) => item.studentId === student.id && item.date === todayKey)) return;
-    const record = {
-      id: createId(),
-      studentId: student.id,
-      studentName: student.name,
-      className: student.className,
-      date: todayKey,
-      time: new Intl.DateTimeFormat("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Asia/Jakarta",
-       }).format(serverNow),
-      status: "Hadir",
-    };
-    if (supabase) {
-      const { error } = await supabase.from("attendances").insert({
-        id: String(record.id),
-        student_id: String(record.studentId),
-        student_name: record.studentName,
-        class_name: record.className,
-        date: record.date,
-        time: record.time,
-        status: record.status,
-      });
-      if (error) {
-        setNotice(`Gagal menandai kehadiran: ${error.message}`);
-        return;
-      }
-    }
-    upsertAttendanceSlices(record);
+    await markAttendanceAsAdmin(student, todayKey, "Hadir", "Gagal menandai kehadiran");
   }
 
   async function markStudentMenstruation(student) {
@@ -1241,95 +1297,34 @@ export default function Home() {
     }
     if (student.gender !== "Perempuan") return;
     if (attendances.some((item) => item.studentId === student.id && item.date === todayKey)) return;
-    const record = {
-      id: createId(),
-      studentId: student.id,
-      studentName: student.name,
-      className: student.className,
-      date: todayKey,
-      time: new Intl.DateTimeFormat("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Asia/Jakarta",
-       }).format(serverNow),
-      status: "Haid",
-    };
-    if (supabase) {
-      const { error } = await supabase.from("attendances").insert({
-        id: String(record.id),
-        student_id: String(record.studentId),
-        student_name: record.studentName,
-        class_name: record.className,
-        date: record.date,
-        time: record.time,
-        status: record.status,
-      });
-      if (error) {
-        setNotice(`Gagal menandai haid: ${error.message}`);
-        return;
-      }
-    }
-    setNotice("");
-    upsertAttendanceSlices(record);
+    await markAttendanceAsAdmin(student, todayKey, "Haid", "Gagal menandai haid");
   }
 
   async function saveStudent(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const isEditing = Boolean(editing?.id);
-    const value = {
-      id: isEditing ? editing.id : createId(),
-      nis: form.get("nis") || "",
+    // PATCH replaces every field, so the edit form always sends all of them.
+    const input = {
+      nis: String(form.get("nis") || "").trim(),
       name: normalizeStudentName(form.get("name")),
-      className: form.get("className"),
-      gender: form.get("gender") || "",
+      className: String(form.get("className") || ""),
+      gender: String(form.get("gender") || ""),
       username: String(form.get("username") || "").trim(),
-      password: form.get("password"),
     };
-    if (
-      students.some(
-        (item) => item.username === value.username && item.id !== value.id,
-      )
-    ) {
-      setNotice("Username sudah digunakan.");
+    if (!isEditing) input.password = String(form.get("password") || "");
+    if (studentSaveInFlight.current) return;
+    studentSaveInFlight.current = true;
+    const { data, error } = isEditing
+      ? await updateStudent(editing.id, input)
+      : await createStudent(input);
+    studentSaveInFlight.current = false;
+    if (error) {
+      setNotice(`Gagal menyimpan data murid: ${error}`);
       return;
     }
-    if (supabase) {
-      const payload = {
-        nis: value.nis,
-        name: value.name,
-        class_name: value.className,
-        gender: value.gender || null,
-        username: value.username,
-        password: value.password,
-      };
-      let result = isEditing
-        ? await supabase
-            .from("students")
-            .update(payload)
-            .eq("username", editing.username)
-            .select("id")
-            .maybeSingle()
-        : await supabase.from("students").insert({ id: String(value.id), ...payload });
-      if (isEditing && !result.error && !result.data) {
-        result = await supabase
-          .from("students")
-          .update(payload)
-          .eq("id", String(value.id))
-          .select("id")
-          .maybeSingle();
-      }
-      const { error } = result;
-      if (isEditing && !error && !result.data) {
-        setNotice("Data murid tidak ditemukan di database. Muat ulang data lalu coba lagi.");
-        return;
-      }
-      if (error) {
-        setNotice(`Gagal menyimpan data murid: ${error.message}`);
-        return;
-      }
-    }
-    setStudents((current) => upsertById(current, value, false));
+    setNotice("");
+    setStudents((current) => upsertById(current, mapStudent(data.student), false));
     setEditing(null);
   }
 
@@ -1340,9 +1335,23 @@ export default function Home() {
   async function confirmDelete() {
     if (!deleteTarget) return;
     const id = deleteTarget.id;
-    if (supabase) await supabase.from("students").delete().eq("id", String(id));
-    setStudents((current) => current.filter((item) => item.id !== id));
+    const { error } = await deactivateStudent(id);
+    if (error) {
+      setNotice(`Gagal menonaktifkan murid: ${error}`);
+      setDeleteTarget(null);
+      return;
+    }
+    setStudents((current) =>
+      current.map((item) => (item.id === id ? { ...item, isActive: false } : item)),
+    );
     setDeleteTarget(null);
+  }
+
+  async function resetPassword(student, password) {
+    const { error } = await resetStudentPassword(student.id, password);
+    if (error) return `Gagal mereset password: ${error}`;
+    setNotice(`Password ${student.name} berhasil direset.`);
+    return null;
   }
 
   function requestCancelAttendance(record) {
@@ -1352,16 +1361,12 @@ export default function Home() {
   async function confirmCancelAttendance() {
     if (!attendanceDeleteTarget) return;
     const id = attendanceDeleteTarget.id;
-    if (supabase) {
-      const { error } = await supabase
-        .from("attendances")
-        .delete()
-        .eq("id", String(id));
-      if (error) {
-        setNotice(`Gagal membatalkan status: ${error.message}`);
-        return;
-      }
+    const { error } = await adminDeleteAttendance(id);
+    if (error) {
+      setNotice(`Gagal membatalkan status: ${error}`);
+      return;
     }
+    attendanceWriteSeq.current += 1;
     deleteAttendanceSlices(id);
     setAttendanceDeleteTarget(null);
   }
@@ -1375,8 +1380,11 @@ export default function Home() {
         </div>
       </main>
     );
-  if (!user) return <Login notice={notice} onLogin={login} />;
-  if (attendanceLoading && (user.role === "student" || view === "dashboard"))
+  if (!user) return <Login notice={notice} onLogin={login} pending={loggingIn} />;
+  if (
+    (attendanceLoading || accountDataLoading) &&
+    (user.role === "student" || view === "dashboard")
+  )
     return (
       <main className="session-loading">
         <div>
@@ -1402,10 +1410,7 @@ export default function Home() {
             attendanceNotice={attendanceNotice}
             onDismissAttendanceNotice={() => setAttendanceNotice("")}
            onChangePassword={() => setPasswordModalOpen(true)}
-          onLogout={() => {
-            localStorage.removeItem("dzuhur-session");
-            setUser(null);
-          }}
+          onLogout={logout}
         />
         {passwordModalOpen && (
           <PasswordModal
@@ -1420,7 +1425,8 @@ export default function Home() {
   return (
     <>
       <AdminApp
-       students={students}
+       students={activeStudents}
+       allStudents={students}
        attendances={todayAttendance}
        holidays={holidays}
        todayKey={todayKey}
@@ -1445,6 +1451,7 @@ export default function Home() {
       setEditing={setEditing}
        onSave={saveStudent}
        onDelete={requestDelete}
+       onResetPassword={resetPassword}
        onOpenPasswordChange={() => setPasswordModalOpen(true)}
         prayerSchedule={prayerSchedule}
         scheduleReady={scheduleReady}
@@ -1454,19 +1461,7 @@ export default function Home() {
        onMarkStudentMenstruation={markStudentMenstruation}
        onToggleHoliday={toggleHoliday}
        onMarkStudentForDate={markStudentForDate}
-      onImport={(imported) =>
-        setStudents((current) => {
-          const usernames = new Set(current.map((item) => item.username));
-          return [
-            ...current,
-            ...imported.filter((item) => !usernames.has(item.username)),
-          ];
-        })
-      }
-      onLogout={() => {
-        localStorage.removeItem("dzuhur-session");
-        setUser(null);
-      }}
+      onLogout={logout}
        />
       {passwordModalOpen && (
         <PasswordModal
@@ -1493,7 +1488,7 @@ export default function Home() {
   );
 }
 
-function Login({ notice, onLogin }) {
+function Login({ notice, onLogin, pending }) {
   return (
     <main className="login-shell">
       <section className="login-story">
@@ -1537,16 +1532,15 @@ function Login({ notice, onLogin }) {
           </label>
           <label>
             Password
-            <input
+            <PasswordInput
               name="password"
-              type="password"
               autoComplete="current-password"
               placeholder="Masukkan password"
               required
             />
           </label>
-          <button className="primary" type="submit">
-            Masuk ke aplikasi
+          <button className="primary" type="submit" disabled={pending}>
+            {pending ? "Memproses..." : "Masuk ke aplikasi"}
           </button>
         </form>
       </section>
@@ -1720,20 +1714,15 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
     (item) => item.studentId === user.id && item.date === todayKey,
   );
   async function validateConfirmationTime() {
-    let schedule = prayerSchedule;
-    if (supabase) {
-      const result = await fetchPrayerSchedule();
-      if (result.error || !result.schedule) {
-        setTimeNotice({
-          title: "Jadwal belum tersedia",
-          message: "Gagal memuat jadwal terbaru. Coba lagi beberapa saat.",
-        });
-        return false;
-      }
-      schedule = result.schedule;
-    } else if (!scheduleReady) {
+    const result = await fetchPrayerSchedule();
+    if (result.error || !result.schedule) {
+      setTimeNotice({
+        title: "Jadwal belum tersedia",
+        message: "Gagal memuat jadwal terbaru. Coba lagi beberapa saat.",
+      });
       return false;
     }
+    const schedule = result.schedule;
     if (!schedule.enabled) return true;
     const minutes = jakartaMinutesNow();
     const startMinutes = timeToMinutes(schedule.start);
@@ -1776,6 +1765,7 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
         onBack={() => setSettingsOpen(false)}
         onChangePassword={onChangePassword}
         onLateAttendance={onLateAttendance}
+        attendanceStartDate={prayerSchedule.attendanceStartDate}
         attendanceNotice={attendanceNotice}
         onDismissAttendanceNotice={onDismissAttendanceNotice}
         onLogout={onLogout}
@@ -1911,7 +1901,7 @@ function StudentPage({ user, attendances, holidays, todayKey, onConfirm, onHaid,
   );
 }
 
-function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, onChangePassword, onLateAttendance, attendanceNotice, onDismissAttendanceNotice, onLogout }) {
+function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, onChangePassword, onLateAttendance, attendanceStartDate, attendanceNotice, onDismissAttendanceNotice, onLogout }) {
   const [month, setMonth] = useState(() => {
     const current = new Date(todayKey + "T12:00:00");
     return new Date(current.getFullYear(), current.getMonth(), 1);
@@ -1995,7 +1985,9 @@ function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, on
               const record = attendanceByDate.get(date);
               const isHoliday = holidays.includes(date);
               const isToday = date === todayKey;
-              const canCorrect = !record && !isHoliday && date < todayKey;
+              // Same bounds as submit_late_attendance: start date <= date < today.
+              const canCorrect =
+                !record && !isHoliday && date >= attendanceStartDate && date < todayKey;
               const statusClass = record
                 ? record.status === "Haid"
                   ? "haid"
@@ -2081,6 +2073,7 @@ function StudentSettingsPage({ user, attendances, holidays, todayKey, onBack, on
 function AdminApp(props) {
   const {
     students,
+    allStudents,
     attendances,
     holidays,
     history,
@@ -2103,6 +2096,7 @@ function AdminApp(props) {
     setEditing,
     onSave,
     onDelete,
+    onResetPassword,
     onOpenPasswordChange,
     onCancelAttendance,
     onMarkStudentPresent,
@@ -2230,7 +2224,7 @@ function AdminApp(props) {
         )}
         {view === "reports" && (
           <ReportPage
-            students={students}
+            students={allStudents}
             history={history}
             classRanking={reportClassRanking}
             loading={reportLoading}
@@ -2253,7 +2247,7 @@ function AdminApp(props) {
         {view === "students" && (
           <Students
             students={filteredStudents}
-            allStudents={students}
+            allStudents={allStudents}
             classOptions={classOptions}
             query={query}
             setQuery={setQuery}
@@ -2261,6 +2255,7 @@ function AdminApp(props) {
             setClassFilter={setClassFilter}
             setEditing={setEditing}
             onDelete={onDelete}
+            onResetPassword={onResetPassword}
           />
         )}
         {view === "qr" && <QrPage />}
@@ -2564,12 +2559,18 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
   const [reportFilter, setReportFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showRanking, setShowRanking] = useState(false);
-  const classOptions = [...new Set(students.map((student) => student.className).filter(Boolean))].sort();
   const referenceDate = new Date(`${selectedMonth}-01T12:00:00`);
   const rangeStart = `${selectedMonth}-01`;
   const rangeEnd = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0)
     .toISOString()
     .slice(0, 10);
+  // Active students plus deactivated ones with attendance this period; used for
+  // class options, percentages, the pending list and the xlsx export alike.
+  const periodStudents = useMemo(
+    () => selectReportStudents(students, history, { startDate: rangeStart, endDate: rangeEnd }),
+    [students, history, rangeStart, rangeEnd],
+  );
+  const classOptions = [...new Set(periodStudents.map((student) => student.className).filter(Boolean))].sort();
   const requestRange = useEffectEvent(onRangeChange);
   useEffect(() => {
     requestRange(rangeStart, rangeEnd, selectedClass);
@@ -2584,7 +2585,7 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
       })
       .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   }, [history, selectedMonth, selectedClass]);
-  const selectedStudents = students.filter(
+  const selectedStudents = periodStudents.filter(
     (student) => selectedClass === "Semua kelas" || student.className === selectedClass,
   );
   const periodDays = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0).getDate();
@@ -2651,7 +2652,7 @@ function ReportPage({ students, history, classRanking, loading, onRangeChange })
     const subtitle = "SISWA-SISWI SMAN 9 SEMARANG";
 
     exportClasses.forEach((className) => {
-      const classStudents = students
+      const classStudents = periodStudents
         .filter((student) => student.className === className)
         .sort((first, second) => first.name.localeCompare(second.name, "id", { sensitivity: "base" }));
       const dates = periodDates;
@@ -3108,8 +3109,10 @@ function Students({
   setClassFilter,
   setEditing,
   onDelete,
+  onResetPassword,
 }) {
   const [preview, setPreview] = useState(null);
+  const [resetTarget, setResetTarget] = useState(null);
   function handleFile(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -3160,65 +3163,53 @@ function Students({
     reader.readAsArrayBuffer(file);
   }
   async function confirmImport() {
-    if (!preview?.students?.length) return;
-    if (supabase) {
-      const { data: existing, error: readError } = await fetchAllSupabaseRows(
-        "students",
-        "username",
-      );
-      if (readError) {
-        setPreview((current) => ({ ...current, error: readError.message }));
-        return;
-      }
-      const usernames = new Set(
-        (existing || []).map((item) => String(item.username || "").trim()),
-      );
-      const additions = preview.students.filter((item) => {
-        const username = String(item.username || "").trim();
-        if (!username || usernames.has(username)) return false;
-        usernames.add(username);
-        return true;
-      });
-      const payload = additions.map((item) => ({
-          id: String(item.id),
-          nis: item.nis || "",
-          name: normalizeStudentName(item.name),
-          class_name: item.className,
-          gender: item.gender || null,
-          username: String(item.username || "").trim(),
-          password: item.password,
-        }));
-      let { error } = await supabase
-        .from("students")
-        .insert(payload, { onConflict: "username", ignoreDuplicates: true });
-      if (error?.code === "23505") {
-        error = null;
-        for (const student of payload) {
-          const result = await supabase.from("students").insert(student);
-          if (result.error && result.error.code !== "23505") {
-            error = result.error;
-            break;
-          }
-        }
-      }
+    if (!preview?.students?.length || preview.importing) return;
+    const rows = preview.students.map((item) => ({
+      nis: item.nis,
+      name: item.name,
+      className: item.className,
+      gender: item.gender,
+      username: item.username,
+      password: DEFAULT_STUDENT_PASSWORD,
+    }));
+    const total = rows.length;
+    const results = [];
+    let requestError = "";
+    for (let start = 0; start < total; start += IMPORT_BATCH_SIZE) {
+      const batch = rows.slice(start, start + IMPORT_BATCH_SIZE);
+      const progress = `Mengimpor ${start + batch.length} dari ${total} murid...`;
+      setPreview((current) => ({ ...current, importing: true, progress }));
+      const { data, error } = await importStudents(batch);
       if (error) {
-        setPreview((current) => ({ ...current, error: error.message }));
-        return;
+        requestError = error;
+        break;
       }
-    } else {
-      const current = JSON.parse(
-        localStorage.getItem("dzuhur-students") || "[]",
-      );
-      const usernames = new Set(current.map((item) => item.username));
-      localStorage.setItem(
-        "dzuhur-students",
-        JSON.stringify([
-          ...current,
-          ...preview.students.filter((item) => !usernames.has(item.username)),
-        ]),
-      );
+      results.push(...data.results);
     }
-    window.location.reload();
+    const failures = results.filter((item) => item.status === "error");
+    if (!requestError && !failures.length) {
+      window.location.reload();
+      return;
+    }
+    const created = results.filter((item) => item.status === "created").length;
+    const duplicates = results.filter((item) => item.status === "duplicate").length;
+    const summary = [
+      `${created} murid tersimpan`,
+      duplicates ? `${duplicates} username sudah digunakan` : "",
+      failures.length ? `${failures.length} gagal` : "",
+      requestError ? `${total - results.length} belum diproses` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    setPreview((current) => ({
+      ...current,
+      importing: false,
+      progress: "",
+      failures,
+      error: requestError
+        ? `Import berhenti: ${requestError} (${summary}).`
+        : `Sebagian murid gagal diimpor (${summary}).`,
+    }));
   }
   return (
     <section className="students-panel">
@@ -3248,7 +3239,6 @@ function Students({
               name: "",
               className: classOptions[0] || "",
               username: "",
-              password: "123",
             })
           }
         >
@@ -3282,7 +3272,15 @@ function Students({
                   : "-"}
             </span>
             <span>{student.username}</span>
-            <span className="password-text">{student.password}</span>
+            <span>
+              <button
+                type="button"
+                className="secondary reset-password-button"
+                onClick={() => setResetTarget(student)}
+              >
+                Reset password
+              </button>
+            </span>
             <span className="row-actions">
               <button
                 aria-label="Edit murid"
@@ -3291,7 +3289,8 @@ function Students({
                 <PencilSimple size={18} />
               </button>
               <button
-                aria-label="Hapus murid"
+                aria-label="Nonaktifkan murid"
+                title="Nonaktifkan murid"
                 onClick={() => onDelete(student.id)}
               >
                 <Trash size={18} />
@@ -3305,6 +3304,13 @@ function Students({
           preview={preview}
           onClose={() => setPreview(null)}
           onConfirm={confirmImport}
+        />
+      )}
+      {resetTarget && (
+        <ResetPasswordModal
+          student={resetTarget}
+          onClose={() => setResetTarget(null)}
+          onReset={onResetPassword}
         />
       )}
     </section>
@@ -3328,16 +3334,29 @@ function ImportPreview({ preview, onClose, onConfirm }) {
           <h2>
             {preview.noNewStudents
               ? "Data sudah tersimpan"
-              : preview.error
-                ? "File belum bisa diimpor"
-                : "Periksa data murid"}
+              : preview.failures
+                ? "Import belum selesai"
+                : preview.error
+                  ? "File belum bisa diimpor"
+                  : "Periksa data murid"}
           </h2>
           <p className="muted">{preview.fileName}</p>
         </div>
         {preview.error ? (
-          <p className={preview.noNewStudents ? "import-info" : "form-error"}>
-            {preview.error}
-          </p>
+          <>
+            <p className={preview.noNewStudents ? "import-info" : "form-error"}>
+              {preview.error}
+            </p>
+            {preview.failures?.length > 0 && (
+              <ul className="import-warning import-failures">
+                {preview.failures.map((failure, index) => (
+                  <li key={`${failure.username}-${index}`}>
+                    <strong>{failure.username || "(username kosong)"}</strong>: {failure.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         ) : (
           <>
             <p className="import-summary">
@@ -3363,15 +3382,30 @@ function ImportPreview({ preview, onClose, onConfirm }) {
                 </span>
               ))}
             </div>
+            {preview.progress && (
+              <p className="import-info" role="status">
+                {preview.progress}
+              </p>
+            )}
           </>
         )}
         <div className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose}>
-            Batal
+          <button
+            type="button"
+            className="secondary"
+            onClick={onClose}
+            disabled={preview.importing}
+          >
+            {preview.failures ? "Tutup" : "Batal"}
           </button>
           {!preview.error && (
-            <button type="button" className="primary" onClick={onConfirm}>
-              Data sudah benar, simpan
+            <button
+              type="button"
+              className="primary"
+              onClick={onConfirm}
+              disabled={preview.importing}
+            >
+              {preview.importing ? "Mengimpor..." : "Data sudah benar, simpan"}
             </button>
           )}
         </div>
@@ -3437,6 +3471,10 @@ function SettingsPage({ onLogout, onChangePassword, prayerSchedule, scheduleRead
       setScheduleNotice("Jam selesai harus lebih akhir dari jam mulai.");
       return;
     }
+    if (!draftSchedule.attendanceStartDate) {
+      setScheduleNotice("Tanggal mulai absensi wajib diisi.");
+      return;
+    }
     setSavingSchedule(true);
     try {
       const error = await onSavePrayerSchedule(draftSchedule);
@@ -3500,6 +3538,25 @@ function SettingsPage({ onLogout, onChangePassword, prayerSchedule, scheduleRead
             />
           </label>
         </div>
+        <div className="schedule-times">
+          <label>
+            Tanggal mulai absensi
+            <input
+              type="date"
+              value={draftSchedule.attendanceStartDate || ""}
+              required
+              onChange={(event) =>
+                setDraftSchedule((current) => ({
+                  ...current,
+                  attendanceStartDate: event.target.value,
+                }))
+              }
+            />
+          </label>
+        </div>
+        <span className="muted">
+          Murid hanya dapat memperbaiki absensi mulai tanggal ini.
+        </span>
         {scheduleNotice && <p className="schedule-notice">{scheduleNotice}</p>}
         <button className="primary" type="submit" disabled={!scheduleReady || savingSchedule}>
           {savingSchedule ? "Menyimpan..." : "Simpan jadwal"}
@@ -3527,6 +3584,24 @@ function SettingsPage({ onLogout, onChangePassword, prayerSchedule, scheduleRead
         </button>
       </div>
     </section>
+  );
+}
+
+function PasswordInput(props) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <span className="password-field">
+      <input {...props} type={visible ? "text" : "password"} />
+      <button
+        type="button"
+        aria-label={visible ? "Sembunyikan password" : "Tampilkan password"}
+        aria-pressed={visible}
+        onClick={() => setVisible((current) => !current)}
+      >
+        {visible ? <EyeSlash size={20} /> : <Eye size={20} />}
+      </button>
+    </span>
   );
 }
 
@@ -3568,15 +3643,15 @@ function PasswordModal({ role, onClose, onChangePassword }) {
         </div>
         <label>
           Password saat ini
-          <input name="currentPassword" type="password" required autoComplete="current-password" />
+          <PasswordInput name="currentPassword" required autoComplete="current-password" />
         </label>
         <label>
           Password baru
-          <input name="newPassword" type="password" required autoComplete="new-password" />
+          <PasswordInput name="newPassword" required autoComplete="new-password" />
         </label>
         <label>
           Konfirmasi password baru
-          <input name="confirmation" type="password" required autoComplete="new-password" />
+          <PasswordInput name="confirmation" required autoComplete="new-password" />
         </label>
         {error && <p className="form-error">{error}</p>}
         <div className="modal-actions">
@@ -3632,16 +3707,77 @@ function StudentModal({ student, classOptions, onClose, onSave }) {
           Username
           <input name="username" defaultValue={student.username} required />
         </label>
-        <label>
-          Password
-          <input name="password" defaultValue={student.password} required />
-        </label>
+        {!student.id && (
+          <label>
+            Password
+            <input name="password" defaultValue={DEFAULT_STUDENT_PASSWORD} required />
+          </label>
+        )}
         <div className="modal-actions">
           <button type="button" className="secondary" onClick={onClose}>
             Batal
           </button>
           <button type="submit" className="primary">
             Simpan data
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ResetPasswordModal({ student, onClose, onReset }) {
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const newPassword = String(form.get("newPassword") || "");
+    const confirmation = String(form.get("confirmation") || "");
+    if (newPassword.length < 3) {
+      setError("Password baru minimal 3 karakter.");
+      return;
+    }
+    if (newPassword !== confirmation) {
+      setError("Konfirmasi password belum sesuai.");
+      return;
+    }
+    setSaving(true);
+    const message = await onReset(student, newPassword);
+    setSaving(false);
+    if (message) {
+      setError(message);
+      return;
+    }
+    onClose();
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <form className="student-modal" onSubmit={submit}>
+        <div>
+          <p className="eyebrow">RESET PASSWORD</p>
+          <h2>Reset password murid</h2>
+          <p className="muted">
+            Atur password baru untuk <strong>{student.name}</strong> ({student.username}).
+          </p>
+        </div>
+        <label>
+          Password baru
+          <PasswordInput name="newPassword" required autoComplete="new-password" />
+        </label>
+        <label>
+          Konfirmasi password baru
+          <PasswordInput name="confirmation" required autoComplete="new-password" />
+        </label>
+        {error && <p className="form-error">{error}</p>}
+        <div className="modal-actions">
+          <button type="button" className="secondary" onClick={onClose}>
+            Batal
+          </button>
+          <button type="submit" className="primary" disabled={saving}>
+            {saving ? "Menyimpan..." : "Simpan password"}
           </button>
         </div>
       </form>
@@ -3662,11 +3798,11 @@ function DeleteConfirm({ student, onCancel, onConfirm }) {
           <WarningCircle size={30} weight="fill" />
         </div>
         <div>
-          <p className="eyebrow">KONFIRMASI HAPUS</p>
-          <h2 id="delete-student-title">Hapus data murid?</h2>
+          <p className="eyebrow">KONFIRMASI NONAKTIFKAN</p>
+          <h2 id="delete-student-title">Nonaktifkan murid?</h2>
           <p className="muted">
-            Data <strong>{student.name}</strong> akan dihapus dari daftar murid.
-            Tindakan ini tidak dapat dibatalkan.
+            <strong>{student.name}</strong> akan disembunyikan dari daftar murid dan
+            tidak bisa login lagi. Riwayat absensinya tetap tersimpan.
           </p>
         </div>
         <div className="modal-actions">
@@ -3674,7 +3810,7 @@ function DeleteConfirm({ student, onCancel, onConfirm }) {
             Batal
           </button>
           <button type="button" className="danger-button" onClick={onConfirm}>
-            Hapus data
+            Nonaktifkan murid
           </button>
         </div>
       </section>

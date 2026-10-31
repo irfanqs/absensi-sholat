@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test lib/auth.test.mjs lib/auth-migration.test.mjs lib/admin-students.test.mjs lib/report-students.test.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
